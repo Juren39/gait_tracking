@@ -32,6 +32,17 @@
       transition: all 0.3s ease;
       margin-bottom: 1rem;
       background: #fafafa;
+      position: relative;  /* 为了让 input 绝对定位 */
+    }
+    /* 隐藏文件选择按钮，仅通过点击/拖拽触发选择 */
+    .drop-zone input[type="file"] {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
     }
     .drop-zone.disabled {
       border-color: #eee;
@@ -120,7 +131,7 @@
       margin-right: 8px;
     }
     .track-item input {
-      width: 40px;
+      width: 80px;
       margin-right: 10px;
       padding: 2px 5px;
     }
@@ -142,13 +153,6 @@
       font-size: 0.9rem;
       padding: 5px;
     }
-
-    #autoSaveMsg {
-      text-align: center;
-      color: #444;
-      margin-bottom: 1rem;
-      font-size: 0.9rem;
-    }
   </style>
 </head>
 <body>
@@ -156,13 +160,12 @@
   <h1>标注辅助工具</h1>
   <p style="text-align:center;">
     1) 最开始为初始状态：无法播放<br/>
-    2) 需要放入 video(.mp4/.avi) 和json文件(txt)后可点击“播放”<br/>
-    3) 播放后禁止再次点击“播放”，在此状态存在自动保存(10分钟一次)<br/>
-    4) 点击“重新上传”回到初始状态
+    2) 需要放入 video(.mp4/.avi) 和标签文件(txt/json)后可点击“播放”<br/>
+    3) 播放后禁止再次点击“播放”<br/>
+    4) 点击“重新上传”回到初始状态<br/>
+    <br/>
+    注：如需自定义保存路径，请在浏览器设置中启用“每次下载都询问保存位置”等类似选项
   </p>
-
-  <!-- 自动保存提示 -->
-  <div id="autoSaveMsg"></div>
 
   <!-- 拖拽区域：video（mp4, avi） -->
   <div id="videoDropZone" class="drop-zone">
@@ -170,10 +173,10 @@
     <input type="file" id="videoInput" accept=".mp4,.avi" />
   </div>
 
-  <!-- 拖拽区域：txt（仅txt） -->
+  <!-- 拖拽区域：txt/json -->
   <div id="jsonDropZone" class="drop-zone">
-    <p>拖拽/点击上传 TXT 文件</p>
-    <input type="file" id="jsonInput" accept=".txt" />
+    <p>拖拽/点击上传标签文件 (txt / json)</p>
+    <input type="file" id="jsonInput" accept=".txt,.json" />
   </div>
 
   <!-- 按钮 -->
@@ -203,8 +206,8 @@
    ************************************************************/
   let currentState = "initial"; 
   // initial: 初始状态 => 不可播放
-  // playable: 已选video+txt => 可点击播放
-  // playing: 已点击播放 => 播放中&自动保存中 => 不可再点击播放
+  // playable: 已选video+label => 可点击播放
+  // playing: 已点击播放 => 播放中 => 不可再点击播放
 
   function setState(newState) {
     currentState = newState;
@@ -213,15 +216,18 @@
     switch(newState) {
       case "initial":
         // 禁用播放、保存按钮
+        video.controls = false
         playBtn.disabled = true;
         document.getElementById('saveJsonBtn').disabled = true;
         break;
       case "playable":
         // 可点击播放
+        video.controls = false
         playBtn.disabled = false;
         break;
       case "playing":
         // 禁用播放按钮
+        video.controls = true
         playBtn.disabled = true;
         // 启用保存按钮
         document.getElementById('saveJsonBtn').disabled = false;
@@ -249,11 +255,8 @@
   // 重新上传时恢复UI
   let originalVideoDropHTML = "";
   let originalJsonDropHTML = "";
-
-  // 自动保存
-  let autoSaveInterval = null;
-  let autoSaveIntervalMs = 10 * 60_000; // 10分钟
-  let autoSaveCounter = 0;
+  
+  // 用于保存时设置默认文件名
   let originalJsonBaseName = "labels";
 
   window.addEventListener('load', () => {
@@ -277,14 +280,19 @@
       txtDropZone,
       document.getElementById('jsonInput'),
       onTxtFileSelected,
-      ['txt']
+      ['txt','json']
     );
 
+    // 记录原始HTML，便于“重新上传”时复原
     originalVideoDropHTML = videoDropZone.innerHTML;
     originalJsonDropHTML  = txtDropZone.innerHTML;
+
+    // 绑定按钮事件
     document.getElementById('playBtn').addEventListener('click', onPlayButtonClick);
     document.getElementById('saveJsonBtn').addEventListener('click', onSaveJsonClick);
     document.getElementById('resetBtn').addEventListener('click', onResetUpload);
+
+    // 监听视频事件
     video.addEventListener('play', () => {
       playing = true;
       if (useRAF) {
@@ -319,15 +327,15 @@
     checkReadyToPlay();
   }
 
+  // 如果 videoFile 和 jsonFile 都已选，则进入可播放状态
   function checkReadyToPlay() {
-    // 只有当 videoFile 和 jsonFile 都已选时，可进入 playable 状态
     if (videoFile && jsonFile && currentState === "initial") {
       setState("playable");
     }
   }
 
   /************************************************************
-   * 播放按钮: 读取TXT并解析JSON, 加载视频
+   * 播放按钮: 读取标签文件并解析为JSON, 再加载视频
    ************************************************************/
   function onPlayButtonClick() {
     if (currentState !== "playable") return;
@@ -340,12 +348,24 @@
       try {
         labelData = JSON.parse(e.target.result);
       } catch (err) {
-        alert('TXT文件内容解析为JSON失败: ' + err);
+        alert('文件内容解析为JSON失败: ' + err);
         return;
       }
+      // 若标签中有 fps，可更新
       if (labelData.fps) {
         fps = labelData.fps;
       }
+
+      // 将所有 track_id 转为字符串，避免数字/字符串不匹配
+      if (labelData.frames) {
+        labelData.frames.forEach(frame => {
+          frame.detections.forEach(det => {
+            det.track_id = String(det.track_id);
+          });
+        });
+      }
+
+      // 默认文件名前缀
       const fileName = jsonFile.name; 
       const dotIdx = fileName.lastIndexOf('.');
       if (dotIdx > 0) {
@@ -354,16 +374,6 @@
         originalJsonBaseName = fileName;
       }
       loadVideoFile(videoFile);
-
-      // 启动自动保存
-      autoSaveCounter = 0;
-      if (autoSaveInterval) clearInterval(autoSaveInterval);
-      autoSaveInterval = setInterval(() => {
-        autoSaveJson();
-      }, autoSaveIntervalMs);
-      document.getElementById('autoSaveMsg').innerText =
-        `已启动自动保存，每隔 ${autoSaveIntervalMs/60000} 分钟保存一次...`;
-
     };
     reader.readAsText(jsonFile); 
   }
@@ -381,6 +391,7 @@
       canvas.width = videoWidth;
       canvas.height = videoHeight;
 
+      // 判断浏览器是否支持 requestVideoFrameCallback
       if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
         useRAF = false;
       } else {
@@ -391,31 +402,15 @@
   }
 
   /************************************************************
-   * 自动保存
-   ************************************************************/
-  function autoSaveJson() {
-    if (!labelData || currentState !== "playing") return;
-    autoSaveCounter++;
-    let autoFileName = `auto_saved/${originalJsonBaseName}_${autoSaveCounter}.json`;
-    downloadJson(labelData, autoFileName);
-  }
-
-  /************************************************************
-   * 手动保存
+   * 手动保存 JSON（去掉 prompt，直接以固定文件名保存）
    ************************************************************/
   function onSaveJsonClick() {
     if (!labelData) return;
-    // 提示输入文件名
-    let defaultFileName = `${originalJsonBaseName}_updated.json`;
-    let userName = prompt("请输入要保存的JSON文件名：", defaultFileName);
-    if (userName === null) {
-      // 用户取消
-      return;
-    }
-    if (!userName.endsWith(".json")) {
-      userName += ".json";
-    }
-    downloadJson(labelData, userName);
+    // 固定为 "labels.txt"（或你想要的任意默认文件名）
+    // 若浏览器设置“每次下载都询问保存位置”，则会弹出保存对话框
+    // 否则直接下载到默认目录
+    const defaultFileName = "labels.txt";
+    downloadJson(labelData, defaultFileName);
   }
 
   function downloadJson(dataObj, fileName) {
@@ -470,11 +465,11 @@
       const w = x2 - x1;
       const h = y2 - y1;
       ctx.strokeStyle = "red";
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 5;
       ctx.strokeRect(x1, y1, w, h);
 
       ctx.fillStyle = "red";
-      ctx.font = "bold 24px sans-serif";
+      ctx.font = "bold 30px sans-serif";
       ctx.fillText(`ID: ${det.track_id}`, x1, y1 - 5);
     });
 
@@ -503,9 +498,8 @@
       idLabel.innerText = 'ID:';
       container.appendChild(idLabel);
 
-      // 输入框
       const idInput = document.createElement('input');
-      idInput.type = 'number';
+      idInput.type = 'text';
       idInput.value = oldID;
       container.appendChild(idInput);
 
@@ -514,12 +508,11 @@
       bboxLabel.innerText = `bbox: [${det.bbox.join(', ')}]`;
       container.appendChild(bboxLabel);
 
-      // 更新按钮
       const updateBtn = document.createElement('button');
       updateBtn.className = 'updateBtn';
       updateBtn.innerText = '更新';
       updateBtn.addEventListener('click', () => {
-        const newID = parseInt(idInput.value) || 0;
+        const newID = idInput.value.trim();
         if (newID === oldID) {
           alert('新ID 与 旧ID 相同，无需更新');
           return;
@@ -541,7 +534,7 @@
     if (!labelData || !labelData.frames) return;
     labelData.frames.forEach(frame => {
       frame.detections.forEach(det => {
-        if (det.track_id === oldID) {
+        if (String(det.track_id) === oldID) {
           det.track_id = newID;
         }
       });
@@ -552,15 +545,6 @@
    * 重新上传 -> 回到初始状态
    ************************************************************/
   function onResetUpload() {
-    // 停止自动保存
-    if (autoSaveInterval) {
-      clearInterval(autoSaveInterval);
-      autoSaveInterval = null;
-    }
-    autoSaveCounter = 0;
-    document.getElementById('autoSaveMsg').innerText = "";
-
-    // 重置全局变量
     setState("initial");
     videoFile = null;
     jsonFile = null;
@@ -576,7 +560,7 @@
     video.src = "";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 恢复拖拽区HTML
+    // 恢复拖拽区HTML与状态
     const videoDropZone = document.getElementById('videoDropZone');
     const txtDropZone   = document.getElementById('jsonDropZone');
     videoDropZone.innerHTML = originalVideoDropHTML;
@@ -584,7 +568,6 @@
     videoDropZone.classList.remove('disabled');
     txtDropZone.classList.remove('disabled');
 
-    // 再次 setupDropZone
     setupDropZone(
       videoDropZone,
       document.getElementById('videoInput'),
@@ -595,7 +578,7 @@
       txtDropZone,
       document.getElementById('jsonInput'),
       onTxtFileSelected,
-      ['txt']
+      ['txt','json']
     );
 
     document.getElementById('correctionInfo').innerHTML = "";
@@ -608,23 +591,18 @@
   function setupDropZone(dropZone, fileInput, onFileSelected, allowedExts) {
     let fileSelected = false;
 
-    dropZone.addEventListener('click', () => {
-      if (!fileSelected) {
-        fileInput.click();
-      } else {
-        alert('已选择文件，无需重复上传。');
-      }
-    });
-
     fileInput.addEventListener('change', () => {
-      if (!fileSelected && fileInput.files && fileInput.files.length > 0) {
+      if (fileInput.files && fileInput.files.length > 0) {
         const file = fileInput.files[0];
         if (!checkFileExtension(file.name, allowedExts)) {
           alert(`文件类型不正确，只能选择: ${allowedExts.join(', ')}`);
           fileInput.value = ""; // 重置
           return;
         }
-        handleFile(file);
+        fileSelected = true;
+        dropZone.classList.add('disabled');
+        dropZone.innerHTML = `<p>已选择文件：<strong>${file.name}</strong></p>`;
+        onFileSelected(file);
       }
     });
 
@@ -649,25 +627,20 @@
       e.stopPropagation();
       dropZone.classList.remove('hover');
       if (fileSelected) {
-        alert('已选择文件，无需重复上传。');
-      } else {
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          const file = e.dataTransfer.files[0];
-          if (!checkFileExtension(file.name, allowedExts)) {
-            alert(`文件类型不正确，只能选择: ${allowedExts.join(', ')}`);
-            return;
-          }
-          handleFile(file);
+        return;  // 已经选择过文件，就不再重复处理
+      }
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (!checkFileExtension(file.name, allowedExts)) {
+          alert(`文件类型不正确，只能选择: ${allowedExts.join(', ')}`);
+          return;
         }
+        fileSelected = true;
+        dropZone.classList.add('disabled');
+        dropZone.innerHTML = `<p>已选择文件：<strong>${file.name}</strong></p>`;
+        onFileSelected(file);
       }
     });
-
-    function handleFile(file) {
-      fileSelected = true;
-      dropZone.classList.add('disabled');
-      dropZone.innerHTML = `<p>已选择文件：<strong>${file.name}</strong></p>`;
-      onFileSelected(file);
-    }
   }
 
   function checkFileExtension(filename, allowedExts) {
