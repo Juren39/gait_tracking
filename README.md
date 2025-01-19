@@ -43,6 +43,7 @@ The project will automatically read the parameters from `config.yaml` and start 
 1. **Processing Results**:
    - The processed video will be saved in the `output/exp/videos` folder.
    - The processed labels will be saved in the `output/exp/labels` folder.
+   - We convert source video to mp4 video, it will be saced in the `output/videos`folder.
 2. **Log Information**:
    - The console will display detailed information for each processed frame.
 

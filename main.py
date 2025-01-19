@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 import json
 import torch
+import subprocess
 
 from boxmot import TRACKERS
 from boxmot.tracker_zoo import create_tracker
@@ -79,9 +80,12 @@ def run(args):
     )
 
     source_file_name = Path(source).stem
+    # origin video file to mp4
+    origin_to_mp4_path = Path('./output') / 'videos' / f'{source_file_name}.mp4'
+    convert_to_mp4(source, origin_to_mp4_path)
 
     results = yolo.track(
-        source=source,
+        source=origin_to_mp4_path,
         conf=conf,
         iou=iou,
         agnostic_nms=agnostic_nms,
@@ -99,12 +103,11 @@ def run(args):
         line_width=line_width
     )
     # 获取视频属性
-    vid = cv2.VideoCapture(source)
+    vid = cv2.VideoCapture(origin_to_mp4_path)
     frame_width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(vid.get(cv2.CAP_PROP_FPS))
     vid.release()
-
 
     video_output_path = Path('./output') / name / 'videos' / f'{source_file_name}_tracked.mp4'
     label_output_path = Path('./output') / name / 'labels' / f'{source_file_name}_labels.txt'
@@ -195,8 +198,23 @@ def run(args):
     with open(label_output_path, 'w', encoding='utf-8') as f:
         json.dump(labels, f, ensure_ascii=False, indent=4)
 
-    print(f"视频已保存到: {video_output_path.resolve()}")
-    print(f"JSON 标签文件已保存到: {label_output_path.resolve()}")
+    print(f"video file saved to: {video_output_path.resolve()}")
+    print(f"label file saved to: {label_output_path.resolve()}")
+
+def convert_to_mp4(input_path, output_path, fps=None):
+
+    command = [
+        "ffmpeg",
+        "-i", input_path,           # 输入视频
+        "-c:v", "libx264",          # 视频编码器
+        "-preset", "fast",          # 压缩速度/质量平衡
+        "-crf", "23",               # 视频质量（数值越小越清晰）
+        "-c:a", "aac",              # 音频编码器
+        "-b:a", "128k",             # 音频比特率
+        "-movflags", "+faststart",  # 优化文件头
+        output_path
+    ]
+    subprocess.run(command, check=True)
 
 
 def draw_tracking_results(image, tracks):

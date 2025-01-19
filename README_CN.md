@@ -42,6 +42,7 @@ python main.py
 1. **处理结果**：
    - 处理后的视频会保存在 `output/exp/videos` 文件夹中。
    - 处理后的标签会保存在 `output/exp/labels` 文件夹中。
+   - 原视频会被处理成固定格式的mp4文件后保存在 `output/videos` 文件夹中。
 2. **日志信息**：
    - 控制台会输出每帧的处理详情。
 
