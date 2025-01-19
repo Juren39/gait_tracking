@@ -46,7 +46,7 @@ python main.py
    - 控制台会输出每帧的处理详情。
 
 ### 5. 标注辅助工具
-   - 在命令行进入该文件（`index.html`）所在目录  
+   - 在命令行进入该文件（`index.html`）所在目录(`cd dataset`)
    - 运行 `python -m http.server 8000`（或其他任意 HTTP 服务）  
    - 在浏览器中访问 `http://127.0.0.1:8000/index.html` 
 

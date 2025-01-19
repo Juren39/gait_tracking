@@ -47,8 +47,11 @@ The project will automatically read the parameters from `config.yaml` and start 
    - The console will display detailed information for each processed frame.
 
 ### 5. Annotation Assistance Tool
-   - Navigate to the folder containing `index.html` via the command line
-   - Run `python -m http.server 8000` (or any other HTTP server)
+   - ```bash
+      cd dataset
+      python -m http.server 8000
+      ```
+      you can use 8000 or other port
    - Open your browser and visit `http://127.0.0.1:8000/index.html`
 
 This tool provides a simple web interface that allows:
