@@ -1,4 +1,5 @@
-# Project Running Guide
+# Project Running Guide.  
+[CN](./README_CN.md)
 
 ## Project Overview
 This project primarily utilizes the YOLOv8 model for object detection and tracking, supporting the integration of various trackers such as DeepSORT, OCSORT, ByteTrack, and more.
