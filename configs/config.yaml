@@ -1,0 +1,24 @@
+yolo_model: yolov8n.pt  # YOLO 模型路径
+reid_model: clip_market1501.pt  # ReID 模型路径
+tracking_method: deepocsort  # 跟踪方法
+source: ./files/videos/VID_0104.mp4  # 输入源（视频/摄像头）
+imgsz: [640, 640]  # 推理图像大小
+conf: 0.5  # 置信度阈值
+iou: 0.7  # NMS IoU 阈值
+device: cuda:0  # 设备
+show: false  # 是否显示追踪结果
+save: true  # 是否保存视频
+classes: [0]  # 筛选目标类别
+name: exp  # 实验名称
+exist_ok: true  # 是否覆盖已有实验
+half: false  # 是否使用 FP16 精度
+vid_stride: 1  # 视频帧步长
+show_labels: true  # 是否显示标签
+show_conf: true  # 是否显示置信度
+show_trajectories: true  # 是否显示轨迹
+save_txt: true  # 是否保存追踪结果到 TXT 文件
+save_id_crops: false  # 是否保存 ID 的裁剪图像
+line_width: 2  # 边框宽度
+per_class: false  # 是否按类别跟踪
+verbose: true  # 是否显示详细信息
+agnostic_nms: false  # 是否使用类别无关的 NMS

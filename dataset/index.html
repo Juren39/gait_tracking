@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>标注辅助工具</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: #f0f2f5;
+    }
+    .container {
+      max-width: 1300px;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      padding: 30px;
+    }
+    h1 { text-align: center; margin-bottom: 1rem; }
+
+    .drop-zone {
+      border: 2px dashed #ccc;
+      border-radius: 5px;
+      padding: 20px;
+      text-align: center;
+      color: #555;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 1rem;
+      background: #fafafa;
+    }
+    .drop-zone.disabled {
+      border-color: #eee;
+      background: #f9f9f9;
+      color: #aaa;
+      cursor: not-allowed;
+    }
+    .drop-zone.hover {
+      border-color: #07c;
+      background: #f0faff;
+      color: #07c;
+    }
+
+    #controls {
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    #playBtn, #saveJsonBtn, #resetBtn {
+      font-size: 1rem;
+      padding: 8px 16px;
+      margin: 0 8px;
+      border: none;
+      border-radius: 5px;
+      background: #07c;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    #playBtn:hover, #saveJsonBtn:hover, #resetBtn:hover {
+      background: #059;
+    }
+    #playBtn:disabled, #saveJsonBtn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    #videoContainer {
+      position: relative;
+      margin: 20px auto;
+      width: 960px; 
+    }
+    #video {
+      display: block;
+      background: #000;
+      border-radius: 5px;
+      width: 960px;
+    }
+    #overlayCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      border-radius: 5px;
+      width: 960px;
+    }
+
+    #correctionPanel {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8f8f8;
+      border-radius: 5px;
+    }
+    #correctionPanel h2 {
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+    }
+    .track-list {
+      max-height: 150px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: #fff;
+      margin-bottom: 10px;
+    }
+    .track-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-bottom: 1px solid #eee;
+      font-size: 0.9rem;
+    }
+    .track-item:last-child {
+      border-bottom: none;
+    }
+    .track-item span {
+      margin-right: 8px;
+    }
+    .track-item input {
+      width: 40px;
+      margin-right: 10px;
+      padding: 2px 5px;
+    }
+    .updateBtn {
+      font-size: 0.85rem;
+      padding: 2px 6px;
+      border: none;
+      border-radius: 3px;
+      background: #07c;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    .updateBtn:hover {
+      background: #059;
+    }
+    #noDetMsg {
+      color: #888;
+      font-size: 0.9rem;
+      padding: 5px;
+    }
+
+    #autoSaveMsg {
+      text-align: center;
+      color: #444;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>标注辅助工具</h1>
+  <p style="text-align:center;">
+    1) 最开始为初始状态：无法播放<br/>
+    2) 需要放入 video(.mp4/.avi) 和json文件(txt)后可点击“播放”<br/>
+    3) 播放后禁止再次点击“播放”，在此状态存在自动保存(10分钟一次)<br/>
+    4) 点击“重新上传”回到初始状态
+  </p>
+
+  <!-- 自动保存提示 -->
+  <div id="autoSaveMsg"></div>
+
+  <!-- 拖拽区域：video（mp4, avi） -->
+  <div id="videoDropZone" class="drop-zone">
+    <p>拖拽/点击上传视频文件 (mp4 / avi)</p>
+    <input type="file" id="videoInput" accept=".mp4,.avi" />
+  </div>
+
+  <!-- 拖拽区域：txt（仅txt） -->
+  <div id="jsonDropZone" class="drop-zone">
+    <p>拖拽/点击上传 TXT 文件</p>
+    <input type="file" id="jsonInput" accept=".txt" />
+  </div>
+
+  <!-- 按钮 -->
+  <div id="controls">
+    <button id="playBtn" disabled>播放</button>
+    <button id="saveJsonBtn" disabled>保存JSON</button>
+    <button id="resetBtn">重新上传</button>
+  </div>
+
+  <!-- 视频 + 画布 -->
+  <div id="videoContainer">
+    <video id="video" controls></video>
+    <canvas id="overlayCanvas"></canvas>
+  </div>
+
+  <!-- 修正区 -->
+  <div id="correctionPanel">
+    <h2>修正区</h2>
+    <div id="correctionInfo"></div>
+    <div id="currentFrameTracks" class="track-list"></div>
+  </div>
+</div>
+
+<script>
+  /************************************************************
+   * 文件状态管理：initial, playable, playing
+   ************************************************************/
+  let currentState = "initial"; 
+  // initial: 初始状态 => 不可播放
+  // playable: 已选video+txt => 可点击播放
+  // playing: 已点击播放 => 播放中&自动保存中 => 不可再点击播放
+
+  function setState(newState) {
+    currentState = newState;
+    console.log("Set State =>", newState);
+    const playBtn = document.getElementById('playBtn');
+    switch(newState) {
+      case "initial":
+        // 禁用播放、保存按钮
+        playBtn.disabled = true;
+        document.getElementById('saveJsonBtn').disabled = true;
+        break;
+      case "playable":
+        // 可点击播放
+        playBtn.disabled = false;
+        break;
+      case "playing":
+        // 禁用播放按钮
+        playBtn.disabled = true;
+        // 启用保存按钮
+        document.getElementById('saveJsonBtn').disabled = false;
+        break;
+    }
+  }
+
+  /************************************************************
+   * 全局变量
+   ************************************************************/
+  let videoFile = null;       
+  let jsonFile = null;        
+  let labelData = null;       
+  let video = null;
+  let canvas = null;
+  let ctx = null;
+  let fps = 30;               
+  let videoWidth = 0;
+  let videoHeight = 0;
+  let currentFrameIndex = 0;
+
+  let playing = false;        
+  let useRAF = false;         
+
+  // 重新上传时恢复UI
+  let originalVideoDropHTML = "";
+  let originalJsonDropHTML = "";
+
+  // 自动保存
+  let autoSaveInterval = null;
+  let autoSaveIntervalMs = 10 * 60_000; // 10分钟
+  let autoSaveCounter = 0;
+  let originalJsonBaseName = "labels";
+
+  window.addEventListener('load', () => {
+    video = document.getElementById('video');
+    canvas = document.getElementById('overlayCanvas');
+    ctx = canvas.getContext('2d');
+
+    // 默认状态: initial
+    setState("initial");
+
+    const videoDropZone = document.getElementById('videoDropZone');
+    const txtDropZone   = document.getElementById('jsonDropZone');
+
+    setupDropZone(
+      videoDropZone,
+      document.getElementById('videoInput'),
+      onVideoFileSelected,
+      ['mp4','avi']
+    );
+    setupDropZone(
+      txtDropZone,
+      document.getElementById('jsonInput'),
+      onTxtFileSelected,
+      ['txt']
+    );
+
+    originalVideoDropHTML = videoDropZone.innerHTML;
+    originalJsonDropHTML  = txtDropZone.innerHTML;
+    document.getElementById('playBtn').addEventListener('click', onPlayButtonClick);
+    document.getElementById('saveJsonBtn').addEventListener('click', onSaveJsonClick);
+    document.getElementById('resetBtn').addEventListener('click', onResetUpload);
+    video.addEventListener('play', () => {
+      playing = true;
+      if (useRAF) {
+        requestAnimationFrame(rafRender);
+      } else {
+        video.requestVideoFrameCallback(videoFrameCallback);
+      }
+    });
+    video.addEventListener('pause', () => { playing = false; });
+    video.addEventListener('ended', () => { playing = false; });
+    video.addEventListener('seeking', () => { playing = false; });
+    video.addEventListener('seeked', () => {
+      currentFrameIndex = Math.floor(video.currentTime * fps);
+      renderCurrentFrame();
+      if (!video.paused && !video.ended) {
+        playing = true;
+        if (useRAF) requestAnimationFrame(rafRender);
+        else video.requestVideoFrameCallback(videoFrameCallback);
+      }
+    });
+  });
+
+  /************************************************************
+   * 文件选择逻辑
+   ************************************************************/
+  function onVideoFileSelected(file) {
+    videoFile = file;
+    checkReadyToPlay();
+  }
+  function onTxtFileSelected(file) {
+    jsonFile = file;
+    checkReadyToPlay();
+  }
+
+  function checkReadyToPlay() {
+    // 只有当 videoFile 和 jsonFile 都已选时，可进入 playable 状态
+    if (videoFile && jsonFile && currentState === "initial") {
+      setState("playable");
+    }
+  }
+
+  /************************************************************
+   * 播放按钮: 读取TXT并解析JSON, 加载视频
+   ************************************************************/
+  function onPlayButtonClick() {
+    if (currentState !== "playable") return;
+
+    // 一旦点击播放 => playing状态
+    setState("playing");
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        labelData = JSON.parse(e.target.result);
+      } catch (err) {
+        alert('TXT文件内容解析为JSON失败: ' + err);
+        return;
+      }
+      if (labelData.fps) {
+        fps = labelData.fps;
+      }
+      const fileName = jsonFile.name; 
+      const dotIdx = fileName.lastIndexOf('.');
+      if (dotIdx > 0) {
+        originalJsonBaseName = fileName.slice(0, dotIdx); 
+      } else {
+        originalJsonBaseName = fileName;
+      }
+      loadVideoFile(videoFile);
+
+      // 启动自动保存
+      autoSaveCounter = 0;
+      if (autoSaveInterval) clearInterval(autoSaveInterval);
+      autoSaveInterval = setInterval(() => {
+        autoSaveJson();
+      }, autoSaveIntervalMs);
+      document.getElementById('autoSaveMsg').innerText =
+        `已启动自动保存，每隔 ${autoSaveIntervalMs/60000} 分钟保存一次...`;
+
+    };
+    reader.readAsText(jsonFile); 
+  }
+
+  function loadVideoFile(file) {
+    video.src = '';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const url = URL.createObjectURL(file);
+    video.src = url;
+
+    video.addEventListener('loadedmetadata', () => {
+      videoWidth = video.videoWidth;
+      videoHeight = video.videoHeight;
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        useRAF = false;
+      } else {
+        useRAF = true;
+      }
+      video.play();
+    });
+  }
+
+  /************************************************************
+   * 自动保存
+   ************************************************************/
+  function autoSaveJson() {
+    if (!labelData || currentState !== "playing") return;
+    autoSaveCounter++;
+    let autoFileName = `auto_saved/${originalJsonBaseName}_${autoSaveCounter}.json`;
+    downloadJson(labelData, autoFileName);
+  }
+
+  /************************************************************
+   * 手动保存
+   ************************************************************/
+  function onSaveJsonClick() {
+    if (!labelData) return;
+    // 提示输入文件名
+    let defaultFileName = `${originalJsonBaseName}_updated.json`;
+    let userName = prompt("请输入要保存的JSON文件名：", defaultFileName);
+    if (userName === null) {
+      // 用户取消
+      return;
+    }
+    if (!userName.endsWith(".json")) {
+      userName += ".json";
+    }
+    downloadJson(labelData, userName);
+  }
+
+  function downloadJson(dataObj, fileName) {
+    const jsonStr = JSON.stringify(dataObj, null, 2);
+    const blob = new Blob([jsonStr], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;  
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /************************************************************
+   * VideoFrameCallback / RAF 
+   ************************************************************/
+  function videoFrameCallback(now, metadata) {
+    if (video.paused || video.ended) return;
+    currentFrameIndex = Math.floor(metadata.mediaTime * fps);
+    renderCurrentFrame();
+    video.requestVideoFrameCallback(videoFrameCallback);
+  }
+
+  function rafRender() {
+    if (!playing) return;
+    currentFrameIndex = Math.floor(video.currentTime * fps);
+    renderCurrentFrame();
+    requestAnimationFrame(rafRender);
+  }
+
+  /************************************************************
+   * 绘制+修正逻辑
+   ************************************************************/
+  function renderCurrentFrame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!labelData || !labelData.frames) {
+      updateCorrectionPanel([]);
+      return;
+    }
+    const frameData = labelData.frames.find(f => f.frame_id === currentFrameIndex);
+    if (!frameData) {
+      updateCorrectionPanel([]);
+      return;
+    }
+
+    frameData.detections.forEach(det => {
+      const [x1, y1, x2, y2] = det.bbox;
+      const w = x2 - x1;
+      const h = y2 - y1;
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(x1, y1, w, h);
+
+      ctx.fillStyle = "red";
+      ctx.font = "bold 24px sans-serif";
+      ctx.fillText(`ID: ${det.track_id}`, x1, y1 - 5);
+    });
+
+    updateCorrectionPanel(frameData.detections);
+  }
+
+  function updateCorrectionPanel(detections) {
+    const info = document.getElementById('correctionInfo');
+    const trackList = document.getElementById('currentFrameTracks');
+    trackList.innerHTML = '';
+
+    if (detections.length === 0) {
+      info.innerHTML = `<p>当前帧: ${currentFrameIndex}，无目标。</p>`;
+      trackList.innerHTML = `<p id="noDetMsg">无检测/跟踪框</p>`;
+      return;
+    }
+
+    info.innerHTML = `<p>当前帧: ${currentFrameIndex}，共有 ${detections.length} 个目标</p>`;
+    detections.forEach(det => {
+      const container = document.createElement('div');
+      container.className = 'track-item';
+
+      const oldID = det.track_id;
+
+      const idLabel = document.createElement('span');
+      idLabel.innerText = 'ID:';
+      container.appendChild(idLabel);
+
+      // 输入框
+      const idInput = document.createElement('input');
+      idInput.type = 'number';
+      idInput.value = oldID;
+      container.appendChild(idInput);
+
+      const bboxLabel = document.createElement('span');
+      bboxLabel.style.marginRight = '8px';
+      bboxLabel.innerText = `bbox: [${det.bbox.join(', ')}]`;
+      container.appendChild(bboxLabel);
+
+      // 更新按钮
+      const updateBtn = document.createElement('button');
+      updateBtn.className = 'updateBtn';
+      updateBtn.innerText = '更新';
+      updateBtn.addEventListener('click', () => {
+        const newID = parseInt(idInput.value) || 0;
+        if (newID === oldID) {
+          alert('新ID 与 旧ID 相同，无需更新');
+          return;
+        }
+        if (!confirm(`将全局ID从 ${oldID} 改成 ${newID}，是否继续？`)) {
+          return;
+        }
+        globalUpdateTrackID(oldID, newID);
+        alert(`已将ID: ${oldID} 全局更新为 ${newID}`);
+        renderCurrentFrame();
+      });
+      container.appendChild(updateBtn);
+
+      trackList.appendChild(container);
+    });
+  }
+
+  function globalUpdateTrackID(oldID, newID) {
+    if (!labelData || !labelData.frames) return;
+    labelData.frames.forEach(frame => {
+      frame.detections.forEach(det => {
+        if (det.track_id === oldID) {
+          det.track_id = newID;
+        }
+      });
+    });
+  }
+
+  /************************************************************
+   * 重新上传 -> 回到初始状态
+   ************************************************************/
+  function onResetUpload() {
+    // 停止自动保存
+    if (autoSaveInterval) {
+      clearInterval(autoSaveInterval);
+      autoSaveInterval = null;
+    }
+    autoSaveCounter = 0;
+    document.getElementById('autoSaveMsg').innerText = "";
+
+    // 重置全局变量
+    setState("initial");
+    videoFile = null;
+    jsonFile = null;
+    labelData = null;
+    fps = 30;
+    videoWidth = 0;
+    videoHeight = 0;
+    currentFrameIndex = 0;
+    playing = false;
+    originalJsonBaseName = "labels";
+
+    video.pause();
+    video.src = "";
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 恢复拖拽区HTML
+    const videoDropZone = document.getElementById('videoDropZone');
+    const txtDropZone   = document.getElementById('jsonDropZone');
+    videoDropZone.innerHTML = originalVideoDropHTML;
+    txtDropZone.innerHTML   = originalJsonDropHTML;
+    videoDropZone.classList.remove('disabled');
+    txtDropZone.classList.remove('disabled');
+
+    // 再次 setupDropZone
+    setupDropZone(
+      videoDropZone,
+      document.getElementById('videoInput'),
+      onVideoFileSelected,
+      ['mp4','avi']
+    );
+    setupDropZone(
+      txtDropZone,
+      document.getElementById('jsonInput'),
+      onTxtFileSelected,
+      ['txt']
+    );
+
+    document.getElementById('correctionInfo').innerHTML = "";
+    document.getElementById('currentFrameTracks').innerHTML = "";
+  }
+
+  /************************************************************
+   * 通用的拖拽上传处理
+   ************************************************************/
+  function setupDropZone(dropZone, fileInput, onFileSelected, allowedExts) {
+    let fileSelected = false;
+
+    dropZone.addEventListener('click', () => {
+      if (!fileSelected) {
+        fileInput.click();
+      } else {
+        alert('已选择文件，无需重复上传。');
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (!fileSelected && fileInput.files && fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        if (!checkFileExtension(file.name, allowedExts)) {
+          alert(`文件类型不正确，只能选择: ${allowedExts.join(', ')}`);
+          fileInput.value = ""; // 重置
+          return;
+        }
+        handleFile(file);
+      }
+    });
+
+    dropZone.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!fileSelected) {
+        dropZone.classList.add('hover');
+      }
+    });
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('hover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('hover');
+      if (fileSelected) {
+        alert('已选择文件，无需重复上传。');
+      } else {
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          const file = e.dataTransfer.files[0];
+          if (!checkFileExtension(file.name, allowedExts)) {
+            alert(`文件类型不正确，只能选择: ${allowedExts.join(', ')}`);
+            return;
+          }
+          handleFile(file);
+        }
+      }
+    });
+
+    function handleFile(file) {
+      fileSelected = true;
+      dropZone.classList.add('disabled');
+      dropZone.innerHTML = `<p>已选择文件：<strong>${file.name}</strong></p>`;
+      onFileSelected(file);
+    }
+  }
+
+  function checkFileExtension(filename, allowedExts) {
+    const ext = filename.split('.').pop().toLowerCase();
+    return allowedExts.includes(ext);
+  }
+</script>
+</body>
+</html>
