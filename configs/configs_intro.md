@@ -46,6 +46,8 @@ agnostic_nms: false # Whether to use class-agnostic NMS
 
 verbose: false # Whether to output detailed information: false for showing the progress bar, true for detailed information output. Default is false.
 
+videofps: 10 # Video frames, how many frames per second, Default is 10
+
 ```
 
 [Go to README](../README.md)

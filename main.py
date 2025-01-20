@@ -71,6 +71,7 @@ def run(args):
     per_class = args['per_class']
     agnostic_nms = args['agnostic_nms']
     verbose = args['verbose']
+    videofps = args['videofps']
 
     if imgsz is None:
         imgsz = default_imgsz(yolo_model)
@@ -88,7 +89,7 @@ def run(args):
     label_output_path.parent.mkdir(parents=True, exist_ok=True)
     origin_to_mp4_path.parent.mkdir(parents=True, exist_ok=True)
 
-    convert_to_mp4(source, origin_to_mp4_path)
+    convert_to_mp4(source, origin_to_mp4_path, videofps)
 
     results = yolo.track(
         source=origin_to_mp4_path,
@@ -212,10 +213,10 @@ def run(args):
     with open(label_output_path, 'w', encoding='utf-8') as f:
         json.dump(labels, f, ensure_ascii=False, indent=4)
 
-    print(f"video file saved to: {video_output_path.resolve()}")
+    print(f"visualization file saved to: {video_output_path.resolve()}")
     print(f"label file saved to: {label_output_path.resolve()}")
 
-def convert_to_mp4(input_path, output_path, fps=None):
+def convert_to_mp4(input_path, output_path, videofps):
 
     command = [
         "ffmpeg",
@@ -227,6 +228,7 @@ def convert_to_mp4(input_path, output_path, fps=None):
         "-c:a", "aac",              # 音频编码器
         "-b:a", "128k",             # 音频比特率
         "-movflags", "+faststart",  # 优化文件头
+        "-r", videofps,
         output_path
     ]
     subprocess.run(command)
@@ -267,6 +269,7 @@ def parse_opt():
     config['per_class'] = bool(config['per_class'])   
     config['agnostic_nms'] = bool(config['agnostic_nms'])  
     config['verbose'] = bool(config['verbose'])
+    config['videofps'] = str(config['videofps'])
 
     return config
 

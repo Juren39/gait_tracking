@@ -507,28 +507,54 @@
   /************************************************************
    * 一次性批量更新当前帧的ID，再重绘
    * 若同一帧内有冲突(已存在 newID)，则跳过该帧的修改
-   * 如果该 oldID 连续 50 帧都未出现，则停止搜索
+   * 如果该 oldID 连续 30 帧都未出现，则停止搜索
    ************************************************************/
   function applyFrameUpdates() {
     const trackList = document.getElementById('currentFrameTracks');
     const items = trackList.querySelectorAll('.track-item');
 
     // 一次性收集所有更新，然后集中修改
+    let changes = [];
     items.forEach(item => {
       const oldID = item.dataset.oldID;
       const input = item.querySelector('input[type="text"]');
       const newID = input.value.trim();
 
-      // “同帧撞车”检测
       if (newID && newID !== oldID) {
-        UpdateTrackID(currentFrameIndex, oldID, newID);
+        changes.push({ oldID, newID });
       }
+    });
+    const conflictNewIDs = getConflictNewIDs(changes);
+    if (conflictNewIDs.size > 0) {
+      alert(`检测到以下欲修改ID出现冲突，已跳过相关更新：\n${[...conflictNewIDs].join(', ')}`);
+    }
+    let validChanges = changes.filter(({ newID }) => !conflictNewIDs.has(newID));
+    if (validChanges.length < changes.length) {
+      alert("已跳过有冲突的更新请求，仅应用剩余不冲突的更新");
+    }
+    validChanges.forEach(({ oldID, newID }) => {
+      UpdateTrackID(currentFrameIndex, oldID, newID);
     });
     renderCurrentFrame();
   }
 
+  // 检测“多个 oldID -> 相同 newID”冲突
+  function getConflictNewIDs(changes) {
+    const countMap = {};
+    for (let { newID } of changes) {
+      countMap[newID] = (countMap[newID] || 0) + 1;
+    }
+    const conflictSet = new Set();
+    for (let newID in countMap) {
+      if (countMap[newID] > 1) {
+        conflictSet.add(newID);
+      }
+    }
+    return conflictSet;
+  }
+
   function UpdateTrackID(currentFrameIndex, oldID, newID) {
-    if (!labelData?.frames?.length) return;
+    if (!labelData || !labelData.frames) return;
     labelData.frames.sort((a,b)=>a.frame_id - b.frame_id);
     const frames = labelData.frames;
     let anchorIndex = frames.findIndex(f => f.frame_id === currentFrameIndex);
@@ -540,7 +566,8 @@
       for (let i=anchorIndex; i>=0; i--) {
         const frm = frames[i];
         const hasOld = frm.detections.some(d => d.track_id === oldID);
-        if (hasOld) {
+        const hasNew = frm.detections.some(d => d.track_id === newID);
+        if (hasOld && !hasNew) {
           frm.detections.forEach(d => {
             if (d.track_id === oldID) {
               d.track_id = newID;
@@ -549,7 +576,7 @@
           noAppearCount = 0;
         } else {
           noAppearCount++;
-          if (noAppearCount >= 60) {
+          if (noAppearCount >= 30) {
             break;
           }
         }
@@ -562,7 +589,8 @@
       for (let i=anchorIndex+1; i<frames.length; i++) {
         const frm = frames[i];
         const hasOld = frm.detections.some(d => d.track_id === oldID);
-        if (hasOld) {
+        const hasNew = frm.detections.some(d => d.track_id === newID);
+        if (hasOld && !hasNew) {
           frm.detections.forEach(d => {
             if (d.track_id === oldID) {
               d.track_id = newID;
@@ -571,7 +599,7 @@
           noAppearCount = 0;
         } else {
           noAppearCount++;
-          if (noAppearCount >= 60) {
+          if (noAppearCount >= 30) {
             break;
           }
         }
