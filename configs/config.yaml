@@ -1,7 +1,7 @@
 yolo_model: yolov8n.pt  # YOLO 模型路径
 reid_model: clip_market1501.pt  # ReID 模型路径
 tracking_method: deepocsort  # 跟踪方法
-source: ./files/videos/VID_0104.mp4  # 输入源（视频/摄像头）
+source: ./files/videos/111db.avi  # 输入源（视频/摄像头）
 imgsz: [640, 640]  # 推理图像大小
 conf: 0.5  # 置信度阈值
 iou: 0.7  # NMS IoU 阈值
