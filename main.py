@@ -81,8 +81,13 @@ def run(args):
     )
 
     source_file_name = Path(source).stem
-    # origin video file to mp4
-    origin_to_mp4_path = Path('./output') / 'videos' / f'{source_file_name}.mp4'
+    video_output_path = Path('./output') / name / 'visualization' / f'{source_file_name}_tracked.mp4'
+    label_output_path = Path('./output') / name / 'labels' / f'{source_file_name}_labels.txt'
+    origin_to_mp4_path = Path('./output') / name /'videos' / f'{source_file_name}.mp4'
+    video_output_path.parent.mkdir(parents=True, exist_ok=True)
+    label_output_path.parent.mkdir(parents=True, exist_ok=True)
+    origin_to_mp4_path.parent.mkdir(parents=True, exist_ok=True)
+
     convert_to_mp4(source, origin_to_mp4_path)
 
     results = yolo.track(
@@ -111,10 +116,7 @@ def run(args):
     total_frames = int(vid.get(cv2.CAP_PROP_FRAME_COUNT))
     vid.release()
 
-    video_output_path = Path('./output') / name / 'videos' / f'{source_file_name}_tracked.mp4'
-    label_output_path = Path('./output') / name / 'labels' / f'{source_file_name}_labels.txt'
-    video_output_path.parent.mkdir(parents=True, exist_ok=True)
-    label_output_path.parent.mkdir(parents=True, exist_ok=True)
+
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(str(video_output_path), fourcc, fps, (frame_width, frame_height))
