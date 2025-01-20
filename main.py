@@ -7,6 +7,7 @@ import yaml
 import json
 import torch
 import subprocess
+from tqdm import tqdm
 
 from boxmot import TRACKERS
 from boxmot.tracker_zoo import create_tracker
@@ -68,8 +69,8 @@ def run(args):
     save_id_crops = args['save_id_crops']
     line_width = args['line_width']
     per_class = args['per_class']
-    verbose = args['verbose']
     agnostic_nms = args['agnostic_nms']
+    verbose = args['verbose']
 
     if imgsz is None:
         imgsz = default_imgsz(yolo_model)
@@ -94,19 +95,20 @@ def run(args):
         device=device,
         show_conf=show_conf,
         show_labels=show_labels,
-        verbose=verbose,
         exist_ok=exist_ok,
         name=name,
         classes=classes,
         imgsz=imgsz,       
         vid_stride=vid_stride,
-        line_width=line_width
+        line_width=line_width,
+        verbose=verbose
     )
     # 获取视频属性
     vid = cv2.VideoCapture(origin_to_mp4_path)
     frame_width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(vid.get(cv2.CAP_PROP_FPS))
+    total_frames = int(vid.get(cv2.CAP_PROP_FRAME_COUNT))
     vid.release()
 
     video_output_path = Path('./output') / name / 'videos' / f'{source_file_name}_tracked.mp4'
@@ -144,6 +146,10 @@ def run(args):
         "height": frame_height,
         "frames": []
     }
+    progress_bar = (
+        tqdm(total=total_frames, desc="Processing frames", unit="frame", dynamic_ncols=True, leave=True)
+        if ~verbose else None
+    )
     frame_idx = 0  # 记录帧编号 
     for r in results:
         tracks_info = [] = []
@@ -192,8 +198,14 @@ def run(args):
             "frame_id": frame_idx,
             "detections": tracks_info
         })
+        if ~verbose:
+            num_people = len(tracks_info)
+            progress_bar.set_postfix({"Frame": frame_idx, "People Detected": num_people})
+            progress_bar.update(1)
         frame_idx += 1
         out.write(img)
+
+    progress_bar.close()
     out.release()
     with open(label_output_path, 'w', encoding='utf-8') as f:
         json.dump(labels, f, ensure_ascii=False, indent=4)
@@ -205,6 +217,7 @@ def convert_to_mp4(input_path, output_path, fps=None):
 
     command = [
         "ffmpeg",
+        '-n',
         "-i", input_path,           # 输入视频
         "-c:v", "libx264",          # 视频编码器
         "-preset", "fast",          # 压缩速度/质量平衡
@@ -214,7 +227,7 @@ def convert_to_mp4(input_path, output_path, fps=None):
         "-movflags", "+faststart",  # 优化文件头
         output_path
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command)
 
 
 def draw_tracking_results(image, tracks):
@@ -249,9 +262,9 @@ def parse_opt():
     config['show_trajectories'] = bool(config['show_trajectories'])  
     config['save_id_crops'] = bool(config['save_id_crops'])  
     config['line_width'] = int(config['line_width']) if config['line_width'] is not None else None  
-    config['per_class'] = bool(config['per_class'])  
-    config['verbose'] = bool(config['verbose'])  
+    config['per_class'] = bool(config['per_class'])   
     config['agnostic_nms'] = bool(config['agnostic_nms'])  
+    config['verbose'] = bool(config['verbose'])
 
     return config
 

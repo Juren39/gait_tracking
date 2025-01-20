@@ -20,5 +20,5 @@ save_txt: true  # 是否保存追踪结果到 TXT 文件
 save_id_crops: false  # 是否保存 ID 的裁剪图像
 line_width: 2  # 边框宽度
 per_class: false  # 是否按类别跟踪
-verbose: true  # 是否显示详细信息
 agnostic_nms: false  # 是否使用类别无关的 NMS
+verbose: false

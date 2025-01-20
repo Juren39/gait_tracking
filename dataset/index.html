@@ -139,7 +139,6 @@
       font-size: 0.9rem;
       padding: 5px;
     }
-    /* 新增“应用更新”按钮的大尺寸样式 */
     #applyFrameUpdatesBtn {
       display: inline-block;
       font-size: 1.2rem;
@@ -203,7 +202,7 @@
     <h2>修正区</h2>
     <div id="correctionInfo"></div>
     <div id="currentFrameTracks" class="track-list"></div>
-    <!-- 在这里增加一个“应用更新”按钮，一次性更新并重绘 -->
+    <!-- 应用更新按钮 -->
     <button id="applyFrameUpdatesBtn" style="display:none;">应用更新</button>
   </div>
 </div>
@@ -263,16 +262,12 @@
   // 重新上传时恢复UI
   let originalVideoDropHTML = "";
   let originalJsonDropHTML = "";
-  
-  // 用于保存时设置默认文件名
   let originalJsonBaseName = "labels";
 
   window.addEventListener('load', () => {
     video = document.getElementById('video');
     canvas = document.getElementById('overlayCanvas');
     ctx = canvas.getContext('2d');
-
-    // 默认状态: initial
     setState("initial");
 
     const videoDropZone = document.getElementById('videoDropZone');
@@ -294,13 +289,9 @@
     // 记录原始HTML，便于“重新上传”时复原
     originalVideoDropHTML = videoDropZone.innerHTML;
     originalJsonDropHTML  = txtDropZone.innerHTML;
-
-    // 绑定按钮事件
     document.getElementById('playBtn').addEventListener('click', onPlayButtonClick);
     document.getElementById('saveJsonBtn').addEventListener('click', onSaveJsonClick);
     document.getElementById('resetBtn').addEventListener('click', onResetUpload);
-
-    // 监听视频事件
     video.addEventListener('play', () => {
       playing = true;
       if (useRAF) {
@@ -321,8 +312,6 @@
         else video.requestVideoFrameCallback(videoFrameCallback);
       }
     });
-
-    // “应用更新”按钮：一次性批量更新
     document.getElementById('applyFrameUpdatesBtn').addEventListener('click', applyFrameUpdates);
   });
 
@@ -337,8 +326,6 @@
     jsonFile = file;
     checkReadyToPlay();
   }
-
-  // 如果 videoFile 和 jsonFile 都已选，则进入可播放状态
   function checkReadyToPlay() {
     if (videoFile && jsonFile && currentState === "initial") {
       setState("playable");
@@ -350,8 +337,6 @@
    ************************************************************/
   function onPlayButtonClick() {
     if (currentState !== "playable") return;
-
-    // 一旦点击播放 => playing状态
     setState("playing");
 
     const reader = new FileReader();
@@ -366,7 +351,6 @@
         fps = labelData.fps;
       }
       if (labelData.frames) {
-        // 统一把 track_id 转为字符串，避免数字/字符串不匹配
         labelData.frames.forEach(frame => {
           frame.detections.forEach(det => {
             det.track_id = String(det.track_id);
@@ -477,8 +461,6 @@
       ctx.font = "bold 30px sans-serif";
       ctx.fillText(`ID: ${det.track_id}`, x1, y1 - 5);
     });
-
-    // 更新修正面板
     updateCorrectionPanel(frameData.detections);
   }
 
@@ -492,7 +474,7 @@
     if (detections.length === 0) {
       info.innerHTML = `<p>当前帧: ${currentFrameIndex}，无目标。</p>`;
       trackList.innerHTML = `<p id="noDetMsg">无检测/跟踪框</p>`;
-      applyBtn.style.display = 'none'; // 没有可改动的目标时，隐藏“应用更新”按钮
+      applyBtn.style.display = 'none'; 
       return;
     }
 
@@ -500,11 +482,8 @@
     detections.forEach((det, index) => {
       const container = document.createElement('div');
       container.className = 'track-item';
-
-      // 用 data-* 属性存储旧ID，方便稍后比较
       container.dataset.oldID = det.track_id;
 
-      // 每个目标的行信息
       const idLabel = document.createElement('span');
       idLabel.innerText = 'ID:';
       container.appendChild(idLabel);
@@ -512,7 +491,7 @@
       const idInput = document.createElement('input');
       idInput.type = 'text';
       idInput.value = det.track_id; 
-      idInput.dataset.idx = index;   // 也可存储在 container 上
+      idInput.dataset.idx = index;   
       container.appendChild(idInput);
 
       const bboxLabel = document.createElement('span');
@@ -522,8 +501,6 @@
 
       trackList.appendChild(container);
     });
-
-    // 有目标时，显示“应用更新”按钮
     applyBtn.style.display = 'inline-block';
   }
 
@@ -541,13 +518,11 @@
       const input = item.querySelector('input[type="text"]');
       const newID = input.value.trim();
 
-      // 如果有变化则全局更新(带“同帧撞车”检测)
+      // “同帧撞车”检测
       if (newID && newID !== oldID) {
         globalUpdateTrackIDWithSkipCollision(oldID, newID);
       }
     });
-
-    // 所有更新处理完后，只调用一次渲染
     renderCurrentFrame();
   }
 
@@ -558,14 +533,10 @@
     if (!labelData || !labelData.frames) return;
 
     labelData.frames.forEach(frame => {
-      // 先收集该帧所有ID
       const usedIds = new Set(frame.detections.map(det => det.track_id));
-      // 如果已存在 newID，则跳过本帧，不作修改
       if (usedIds.has(newID)) {
         return;
       }
-
-      // 否则可以安全地将 oldID -> newID
       frame.detections.forEach(det => {
         if (String(det.track_id) === oldID) {
           det.track_id = newID;
@@ -630,7 +601,7 @@
         const file = fileInput.files[0];
         if (!checkFileExtension(file.name, allowedExts)) {
           alert(`文件类型不正确，只能选择: ${allowedExts.join(', ')}`);
-          fileInput.value = ""; // 重置
+          fileInput.value = "";
           return;
         }
         fileSelected = true;

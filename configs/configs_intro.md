@@ -42,9 +42,9 @@ line_width: 2 # Border width (integer or None)
 
 per_class: false # Whether to separate tracking by class
 
-verbose: true # Whether to display detailed information for each frame
-
 agnostic_nms: false # Whether to use class-agnostic NMS
+
+verbose: false # Whether to output detailed information: false for showing the progress bar, true for detailed information output. Default is false.
 
 ```
 
