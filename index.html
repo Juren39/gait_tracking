@@ -507,6 +507,7 @@
   /************************************************************
    * 一次性批量更新当前帧的ID，再重绘
    * 若同一帧内有冲突(已存在 newID)，则跳过该帧的修改
+   * 如果该 oldID 连续 50 帧都未出现，则停止搜索
    ************************************************************/
   function applyFrameUpdates() {
     const trackList = document.getElementById('currentFrameTracks');
@@ -520,31 +521,63 @@
 
       // “同帧撞车”检测
       if (newID && newID !== oldID) {
-        globalUpdateTrackIDWithSkipCollision(oldID, newID);
+        UpdateTrackID(currentFrameIndex, oldID, newID);
       }
     });
     renderCurrentFrame();
   }
 
-  /**
-   * 当修改一个ID时，如果某帧里已经存在 newID，则跳过对该帧的更新（避免同帧出现重复ID）
-   */
-  function globalUpdateTrackIDWithSkipCollision(oldID, newID) {
-    if (!labelData || !labelData.frames) return;
+  function UpdateTrackID(currentFrameIndex, oldID, newID) {
+    if (!labelData?.frames?.length) return;
+    labelData.frames.sort((a,b)=>a.frame_id - b.frame_id);
+    const frames = labelData.frames;
+    let anchorIndex = frames.findIndex(f => f.frame_id === currentFrameIndex);
+    if (anchorIndex < 0) return; 
 
-    labelData.frames.forEach(frame => {
-      const usedIds = new Set(frame.detections.map(det => det.track_id));
-      if (usedIds.has(newID)) {
-        return;
-      }
-      frame.detections.forEach(det => {
-        if (String(det.track_id) === oldID) {
-          det.track_id = newID;
+    // ====== 向前搜索 =======
+    {
+      let noAppearCount = 0; 
+      for (let i=anchorIndex; i>=0; i--) {
+        const frm = frames[i];
+        const hasOld = frm.detections.some(d => d.track_id === oldID);
+        if (hasOld) {
+          frm.detections.forEach(d => {
+            if (d.track_id === oldID) {
+              d.track_id = newID;
+            }
+          });
+          noAppearCount = 0;
+        } else {
+          noAppearCount++;
+          if (noAppearCount >= 60) {
+            break;
+          }
         }
-      });
-    });
-  }
+      }
+    }
 
+    // ====== 向后搜索 =======
+    {
+      let noAppearCount = 0;
+      for (let i=anchorIndex+1; i<frames.length; i++) {
+        const frm = frames[i];
+        const hasOld = frm.detections.some(d => d.track_id === oldID);
+        if (hasOld) {
+          frm.detections.forEach(d => {
+            if (d.track_id === oldID) {
+              d.track_id = newID;
+            }
+          });
+          noAppearCount = 0;
+        } else {
+          noAppearCount++;
+          if (noAppearCount >= 60) {
+            break;
+          }
+        }
+      }
+    }
+  }
   /************************************************************
    * 重新上传 -> 回到初始状态
    ************************************************************/

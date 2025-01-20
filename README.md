@@ -49,7 +49,6 @@ The project will automatically read the parameters from `config.yaml` and start 
 
 ### 5. Annotation Assistance Tool
    - ```bash
-      cd dataset
       python -m http.server 8000
       ```
       you can use 8000 or other port
