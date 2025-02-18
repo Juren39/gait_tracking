@@ -1,0 +1,52 @@
+// {
+//     // Use IntelliSense to learn about possible attributes.
+//     // Hover to view descriptions of existing attributes.
+//     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+//     "version": "0.2.0",
+//     "configurations": [
+//         {
+//             "name": "Python: Current File",
+//             "type": "debugpy",
+//             "request": "launch",
+//             "program": "/home/jsj/anaconda3/envs/yolov8/lib/python3.10/site-packages/torch/distributed/run.py",
+//             "console": "integratedTerminal",
+//             "justMyCode": true,
+//             "env": {
+//                 "CUDA_VISIBLE_DEVICES": "0",
+//                 "NCCL_P2P_DISABLE": "1"
+//             },
+//             "args": [
+//                 "--nproc_per_node=2",
+//                 "--master_port","1293",      
+//                 "anondiff_train.py",
+//                 "--config=configs/training/anon/stage2_training_256_cross.yaml"
+//             ]
+//         }
+//     ]
+// }
+
+
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: main.py",
+            "type": "debugpy",              
+            "request": "launch",
+            "program": "/home/jsj/yolo_track/main.py",  // 这里改成你的 main.py 路径
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "NCCL_P2P_DISABLE": "1"
+            },
+            // 如果需要传入命令行参数，可在此数组中填写
+            "args": [
+                // "--some_arg", "some_value"
+            ]
+        }
+    ]
+}

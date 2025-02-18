@@ -112,7 +112,7 @@ class BaseTracker(ABC):
 
                 # Mark that the first frame setup has been done
                 self._first_frame_processed = True
-
+            
             # Call the original method (e.g., update)
             return method(self, *args, **kwargs)
         
@@ -124,7 +124,7 @@ class BaseTracker(ABC):
         """
         Decorator for the update method to handle per-class processing.
         """
-        def wrapper(self, dets: np.ndarray, img: np.ndarray, embs: np.ndarray = None):
+        def wrapper(self, dets: np.ndarray, img: np.ndarray, box_id: list = None, embs: np.ndarray = None):
             
             #handle different types of inputs
             if dets is None or len(dets) == 0:
@@ -164,7 +164,7 @@ class BaseTracker(ABC):
                 return np.vstack(per_class_tracks) if per_class_tracks else np.empty((0, 8))
             else:
                 # Process all detections at once if per_class is False
-                return update_method(self, dets=dets, img=img, embs=embs)
+                return update_method(self, dets=dets, img=img, box_id=box_id, embs=embs)
         return wrapper
 
 

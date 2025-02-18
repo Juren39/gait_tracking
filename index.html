@@ -59,7 +59,7 @@
       text-align: center;
       margin-bottom: 1rem;
     }
-    #playBtn, #saveJsonBtn, #resetBtn {
+    #playBtn, #saveJsonBtn, #removeMinusOneBtn, #resetBtn {
       font-size: 1rem;
       padding: 8px 16px;
       margin: 0 8px;
@@ -70,10 +70,10 @@
       cursor: pointer;
       transition: background 0.3s ease;
     }
-    #playBtn:hover, #saveJsonBtn:hover, #resetBtn:hover {
+    #playBtn:hover, #saveJsonBtn:hover, #removeMinusOneBtn:hover, #resetBtn:hover {
       background: #059;
     }
-    #playBtn:disabled, #saveJsonBtn:disabled {
+    #playBtn:disabled, #saveJsonBtn:disabled, #removeMinusOneBtn:disabled{
       background: #ccc;
       cursor: not-allowed;
     }
@@ -139,7 +139,7 @@
       font-size: 0.9rem;
       padding: 5px;
     }
-    #applyFrameUpdatesBtn {
+    #rangeFrameUpdateBtn {
       display: inline-block;
       font-size: 1.2rem;
       padding: 12px 24px;
@@ -150,11 +150,68 @@
       cursor: pointer;
       transition: background 0.3s ease, transform 0.2s ease;
     }
-    #applyFrameUpdatesBtn:hover {
+    #rangeFrameUpdateBtn:hover {
       background: #218838;
       transform: scale(1.05);
     }
-    #applyFrameUpdatesBtn:active {
+    #rangeFrameUpdateBtn:active {
+      background: #1e7e34;
+      transform: scale(0.95);
+    }
+    #preFrameUpdateBtn {
+      display: inline-block;
+      font-size: 1.2rem;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      background: #28a745;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+    #preFrameUpdateBtn:hover {
+      background: #218838;
+      transform: scale(1.05);
+    }
+    #preFrameUpdateBtn:active {
+      background: #1e7e34;
+      transform: scale(0.95);
+    }
+    #backFrameUpdateBtn {
+      display: inline-block;
+      font-size: 1.2rem;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      background: #28a745;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+    #backFrameUpdateBtn:hover {
+      background: #218838;
+      transform: scale(1.05);
+    }
+    #backFrameUpdateBtn:active {
+      background: #1e7e34;
+      transform: scale(0.95);
+    }
+    #singleFrameUpdateBtn {
+      display: inline-block;
+      font-size: 1.2rem;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      background: #28a745;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+    #singleFrameUpdateBtn:hover {
+      background: #218838;
+      transform: scale(1.05);
+    }
+    #singleFrameUpdateBtn:active {
       background: #1e7e34;
       transform: scale(0.95);
     }
@@ -188,6 +245,7 @@
   <div id="controls">
     <button id="playBtn" disabled>播放</button>
     <button id="saveJsonBtn" disabled>保存JSON</button>
+    <button id="removeMinusOneBtn" disabled>去除 -1 标签</button>
     <button id="resetBtn">重新上传</button>
   </div>
 
@@ -203,7 +261,10 @@
     <div id="correctionInfo"></div>
     <div id="currentFrameTracks" class="track-list"></div>
     <!-- 应用更新按钮 -->
-    <button id="applyFrameUpdatesBtn" style="display:none;">应用更新</button>
+    <button id="rangeFrameUpdateBtn" style="display:none;">所有范围修改</button>
+    <button id="preFrameUpdateBtn" style="display:none;">前段范围修改</button>
+    <button id="backFrameUpdateBtn" style="display:none;">后段范围修改</button>
+    <button id="singleFrameUpdateBtn" style="display:none;">单帧修改</button>
   </div>
 </div>
 
@@ -220,24 +281,30 @@
     currentState = newState;
     console.log("Set State =>", newState);
     const playBtn = document.getElementById('playBtn');
+    const removeMinusOneBtn = document.getElementById('removeMinusOneBtn');
+    const saveJsonBtn = document.getElementById('saveJsonBtn');
+    console.log("removeMinusOneBtn State =>", removeMinusOneBtn.disabled);
     switch(newState) {
       case "initial":
         // 禁用播放、保存按钮
         video.controls = false;
         playBtn.disabled = true;
-        document.getElementById('saveJsonBtn').disabled = true;
+        removeMinusOneBtn.disabled = true
+        saveJsonBtn.disabled = true;  
         break;
       case "playable":
         // 可点击播放
         video.controls = false;
         playBtn.disabled = false;
+        removeMinusOneBtn.disabled = true;
+        saveJsonBtn.disabled = false;
         break;
       case "playing":
         // 禁用播放按钮
         video.controls = true;
         playBtn.disabled = true;
-        // 启用保存按钮
-        document.getElementById('saveJsonBtn').disabled = false;
+        removeMinusOneBtn.disabled = false;
+        saveJsonBtn.disabled = false;
         break;
     }
   }
@@ -247,7 +314,11 @@
    ************************************************************/
   let videoFile = null;       
   let jsonFile = null;        
-  let labelData = null;       
+  let labelData = null;  
+
+  // 用于存储源文件名
+  let originalJsonFileName = null;
+
   let video = null;
   let canvas = null;
   let ctx = null;
@@ -263,6 +334,8 @@
   let originalVideoDropHTML = "";
   let originalJsonDropHTML = "";
   let originalJsonBaseName = "labels";
+
+  let rangeLimitValue = 15
 
   window.addEventListener('load', () => {
     video = document.getElementById('video');
@@ -292,6 +365,7 @@
     document.getElementById('playBtn').addEventListener('click', onPlayButtonClick);
     document.getElementById('saveJsonBtn').addEventListener('click', onSaveJsonClick);
     document.getElementById('resetBtn').addEventListener('click', onResetUpload);
+    document.getElementById('removeMinusOneBtn').addEventListener('click', removeAllMinusOne);
     video.addEventListener('play', () => {
       playing = true;
       if (useRAF) {
@@ -312,7 +386,11 @@
         else video.requestVideoFrameCallback(videoFrameCallback);
       }
     });
-    document.getElementById('applyFrameUpdatesBtn').addEventListener('click', applyFrameUpdates);
+    document.getElementById('rangeFrameUpdateBtn').addEventListener('click', applyRangeFrameUpdates);
+    document.getElementById('preFrameUpdateBtn').addEventListener('click', applyPreFrameUpdates);
+    document.getElementById('backFrameUpdateBtn').addEventListener('click', applyBackFrameUpdates);
+    document.getElementById('singleFrameUpdateBtn').addEventListener('click', applySingleFrameUpdates);
+
   });
 
   /************************************************************
@@ -324,6 +402,8 @@
   }
   function onTxtFileSelected(file) {
     jsonFile = file;
+    // 记录原文件名
+    originalJsonFileName = jsonFile.name; 
     checkReadyToPlay();
   }
   function checkReadyToPlay() {
@@ -397,8 +477,7 @@
    ************************************************************/
   function onSaveJsonClick() {
     if (!labelData) return;
-    const defaultFileName = "labels.txt"; 
-    downloadJson(labelData, defaultFileName);
+    downloadJson(labelData, originalJsonFileName);
   }
 
   function downloadJson(dataObj, fileName) {
@@ -435,6 +514,15 @@
   /************************************************************
    * 绘制 & 修正面板逻辑
    ************************************************************/
+   function getColorForTrackID(id) {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+      hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    }
+  let hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 100%, 50%)`;
+  }
+  
   function renderCurrentFrame() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -450,58 +538,97 @@
 
     // 画框
     frameData.detections.forEach(det => {
-      const [x1, y1, x2, y2] = det.bbox;
-      const w = x2 - x1;
-      const h = y2 - y1;
-      ctx.strokeStyle = "red";
-      ctx.lineWidth = 5;
-      ctx.strokeRect(x1, y1, w, h);
+    const [x1, y1, x2, y2] = det.bbox;
+    const w = x2 - x1;
+    const h = y2 - y1;
 
-      ctx.fillStyle = "red";
-      ctx.font = "bold 30px sans-serif";
-      ctx.fillText(`ID: ${det.track_id}`, x1, y1 - 5);
-    });
-    updateCorrectionPanel(frameData.detections);
+    // 根据 track_id 生成颜色
+    const color = getColorForTrackID(det.track_id);
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle   = color;
+    ctx.lineWidth   = 2;
+    ctx.strokeRect(x1, y1, w, h);
+
+    ctx.font = "bold 10px sans-serif";
+    ctx.fillText(`ID: ${det.track_id}`, x1, y1 - 5);
+  });
+
+  updateCorrectionPanel(frameData.detections);
   }
 
   function updateCorrectionPanel(detections) {
-    const info = document.getElementById('correctionInfo');
-    const trackList = document.getElementById('currentFrameTracks');
-    const applyBtn = document.getElementById('applyFrameUpdatesBtn');
+    const info     = document.getElementById('correctionInfo');
+    const trackList= document.getElementById('currentFrameTracks');
+    const rangeBtn = document.getElementById('rangeFrameUpdateBtn');
+    const prerangeBtn = document.getElementById('preFrameUpdateBtn');
+    const backrangeBtn = document.getElementById('backFrameUpdateBtn');
+    const singleBtn= document.getElementById('singleFrameUpdateBtn');
 
     trackList.innerHTML = '';
 
+    info.innerHTML = `
+      <p>
+        当前帧:
+        <input type="number" id="frameJumpInput" value="${currentFrameIndex}" style="width:60px;" />
+        <button id="frameJumpBtn">跳转</button>
+        ，共有 ${detections.length} 个目标
+        连续帧阈值:
+        <input type="number" id="rangeLimitInput" value="${rangeLimitValue}" style="width:60px;" />
+      </p>
+    `;
+
+    setTimeout(() => {
+      const jumpBtn = document.getElementById('frameJumpBtn');
+      jumpBtn.addEventListener('click', () => {
+        const frameStr = document.getElementById('frameJumpInput').value.trim();
+        const frameNum = parseInt(frameStr, 10);
+        if (isNaN(frameNum) || frameNum < 0) {
+          alert("请输入有效的帧号（非负整数）");
+          return;
+        }
+        // 跳转 => video.currentTime = frameNum / fps
+        video.currentTime = frameNum / fps;
+      });
+    }, 0);
+  
     if (detections.length === 0) {
-      info.innerHTML = `<p>当前帧: ${currentFrameIndex}，无目标。</p>`;
       trackList.innerHTML = `<p id="noDetMsg">无检测/跟踪框</p>`;
-      applyBtn.style.display = 'none'; 
-      return;
+      rangeBtn.style.display = 'none';
+      prerangeBtn.style.display = 'none';
+      backrangeBtn.style.display = 'none';
+      singleBtn.style.display= 'none';
+      return; 
     }
 
-    info.innerHTML = `<p>当前帧: ${currentFrameIndex}，共有 ${detections.length} 个目标</p>`;
+    info.innerHTML += `<p style="margin-top:6px;">以下为检测内容:</p>`;
+    rangeBtn.style.display = 'inline-block';
+    prerangeBtn.style.display = 'inline-block';
+    backrangeBtn.style.display = 'inline-block';
+    singleBtn.style.display= 'inline-block';
+  
     detections.forEach((det, index) => {
       const container = document.createElement('div');
       container.className = 'track-item';
       container.dataset.oldID = det.track_id;
-
+    
       const idLabel = document.createElement('span');
       idLabel.innerText = 'ID:';
       container.appendChild(idLabel);
-
+    
       const idInput = document.createElement('input');
       idInput.type = 'text';
       idInput.value = det.track_id; 
       idInput.dataset.idx = index;   
       container.appendChild(idInput);
-
+    
       const bboxLabel = document.createElement('span');
       bboxLabel.style.marginRight = '8px';
       bboxLabel.innerText = `bbox: [${det.bbox.join(', ')}]`;
       container.appendChild(bboxLabel);
-
+    
       trackList.appendChild(container);
     });
-    applyBtn.style.display = 'inline-block';
   }
 
   /************************************************************
@@ -509,7 +636,116 @@
    * 若同一帧内有冲突(已存在 newID)，则跳过该帧的修改
    * 如果该 oldID 连续 30 帧都未出现，则停止搜索
    ************************************************************/
-  function applyFrameUpdates() {
+  function applyRangeFrameUpdates() {
+    const trackList = document.getElementById('currentFrameTracks');
+    const items = trackList.querySelectorAll('.track-item');
+
+    // 读取用户定义的连续帧阈值
+    const rangeLimitStr = document.getElementById('rangeLimitInput').value.trim();
+    let rangeLimit = parseInt(rangeLimitStr, 10);
+    if (isNaN(rangeLimit) || rangeLimit <= 0) {
+      alert("请输入一个有效的正整数作为连续帧阈值");
+      return;
+    }
+    rangeLimitValue = rangeLimit;
+
+    // 一次性收集所有更新，然后集中修改
+    let changes = [];
+    items.forEach(item => {
+      const oldID = item.dataset.oldID;
+      const input = item.querySelector('input[type="text"]');
+      const newID = input.value.trim();
+
+      if (newID && newID !== oldID) {
+        changes.push({ oldID, newID });
+      }
+    });
+    const conflictNewIDs = getConflictNewIDs(changes);
+    if (conflictNewIDs.size > 0) {
+      alert(`检测到以下欲修改ID出现冲突，已跳过相关更新：\n${[...conflictNewIDs].join(', ')}`);
+    }
+    let validChanges = changes.filter(({ newID }) => !conflictNewIDs.has(newID));
+    if (validChanges.length < changes.length) {
+      alert("已跳过有冲突的更新请求，仅应用剩余不冲突的更新");
+    }
+    validChanges.forEach(({ oldID, newID }) => {
+      UpdateTrackID(currentFrameIndex, oldID, newID, rangeLimit);
+    });
+    renderCurrentFrame();
+  }
+
+  // 检测“多个 oldID -> 相同 newID”冲突
+  function getConflictNewIDs(changes) {
+    const countMap = {};
+    for (let { newID } of changes) {
+      countMap[newID] = (countMap[newID] || 0) + 1;
+    }
+    const conflictSet = new Set();
+    for (let newID in countMap) {
+      if (countMap[newID] > 1) {
+        conflictSet.add(newID);
+      }
+    }
+    return conflictSet;
+  }
+  
+  function UpdateTrackID(currentFrameIndex, oldID, newID, rangeLimit) {
+    if (!labelData || !labelData.frames) return;
+    labelData.frames.sort((a,b)=>a.frame_id - b.frame_id);
+    const frames = labelData.frames;
+    let anchorIndex = frames.findIndex(f => f.frame_id === currentFrameIndex);
+    if (anchorIndex < 0) return; 
+
+    // ====== 向前搜索 =======
+    {
+      let noAppearCount = 0; 
+      for (let i=anchorIndex; i>=0; i--) {
+        const frm = frames[i];
+        const hasOld = frm.detections.some(d => d.track_id === oldID);
+        const hasNew = frm.detections.some(d => d.track_id === newID);
+        if (hasOld && !hasNew) {
+          frm.detections.forEach(d => {
+            if (d.track_id === oldID) {
+              d.track_id = newID;
+            }
+          });
+          noAppearCount = 0;
+        } else {
+          noAppearCount++;
+          if (noAppearCount >= rangeLimit) {
+            break;
+          }
+        }
+      }
+    }
+
+    // ====== 向后搜索 =======
+    {
+      let noAppearCount = 0;
+      for (let i=anchorIndex+1; i<frames.length; i++) {
+        const frm = frames[i];
+        const hasOld = frm.detections.some(d => d.track_id === oldID);
+        const hasNew = frm.detections.some(d => d.track_id === newID);
+        if (hasOld && !hasNew) {
+          frm.detections.forEach(d => {
+            if (d.track_id === oldID) {
+              d.track_id = newID;
+            }
+          });
+          noAppearCount = 0;
+        } else {
+          noAppearCount++;
+          if (noAppearCount >= rangeLimit) {
+            break;
+          }
+        }
+      }
+    }
+  }
+  /************************************************************
+   * 单帧修改
+   ************************************************************/
+   function applySingleFrameUpdates() {
     const trackList = document.getElementById('currentFrameTracks');
     const items = trackList.querySelectorAll('.track-item');
 
@@ -533,7 +769,17 @@
       alert("已跳过有冲突的更新请求，仅应用剩余不冲突的更新");
     }
     validChanges.forEach(({ oldID, newID }) => {
-      UpdateTrackID(currentFrameIndex, oldID, newID);
+      let frm = labelData.frames.find(f => f.frame_id === currentFrameIndex);
+      if (!frm) return;
+      const hasOld = frm.detections.some(d => d.track_id === oldID);
+      const hasNew = frm.detections.some(d => d.track_id === newID);
+      if (hasOld && !hasNew) {
+        frm.detections.forEach(d => {
+          if (d.track_id === oldID) {
+            d.track_id = newID;
+          }
+        });
+      }
     });
     renderCurrentFrame();
   }
@@ -552,8 +798,130 @@
     }
     return conflictSet;
   }
+  /************************************************************
+   * 单范围修改
+   ************************************************************/
+   function applyPreFrameUpdates() {
+    const trackList = document.getElementById('currentFrameTracks');
+    const items = trackList.querySelectorAll('.track-item');
 
-  function UpdateTrackID(currentFrameIndex, oldID, newID) {
+    // 读取用户定义的连续帧阈值
+    const rangeLimitStr = document.getElementById('rangeLimitInput').value.trim();
+    let rangeLimit = parseInt(rangeLimitStr, 10);
+    if (isNaN(rangeLimit) || rangeLimit <= 0) {
+      alert("请输入一个有效的正整数作为连续帧阈值");
+      return;
+    }
+    rangeLimitValue = rangeLimit;
+
+    // 一次性收集所有更新，然后集中修改
+    let changes = [];
+    items.forEach(item => {
+      const oldID = item.dataset.oldID;
+      const input = item.querySelector('input[type="text"]');
+      const newID = input.value.trim();
+
+      if (newID && newID !== oldID) {
+        changes.push({ oldID, newID });
+      }
+    });
+    const conflictNewIDs = getConflictNewIDs(changes);
+    if (conflictNewIDs.size > 0) {
+      alert(`检测到以下欲修改ID出现冲突，已跳过相关更新：\n${[...conflictNewIDs].join(', ')}`);
+    }
+    let validChanges = changes.filter(({ newID }) => !conflictNewIDs.has(newID)); 
+    if (validChanges.length < changes.length) {
+      alert("已跳过有冲突的更新请求，仅应用剩余不冲突的更新");
+    }
+    validChanges.forEach(({ oldID, newID }) => {
+      UpdatePreTrackID(currentFrameIndex, oldID, newID, rangeLimit);
+    });
+    renderCurrentFrame();
+  }
+
+  function applyBackFrameUpdates() {
+    const trackList = document.getElementById('currentFrameTracks');
+    const items = trackList.querySelectorAll('.track-item');
+
+    // 读取用户定义的连续帧阈值
+    const rangeLimitStr = document.getElementById('rangeLimitInput').value.trim();
+    let rangeLimit = parseInt(rangeLimitStr, 10);
+    if (isNaN(rangeLimit) || rangeLimit <= 0) {
+      alert("请输入一个有效的正整数作为连续帧阈值");
+      return;
+    }
+    rangeLimitValue = rangeLimit;
+
+    // 一次性收集所有更新，然后集中修改
+    let changes = [];
+    items.forEach(item => {
+      const oldID = item.dataset.oldID;
+      const input = item.querySelector('input[type="text"]');
+      const newID = input.value.trim();
+
+      if (newID && newID !== oldID) {
+        changes.push({ oldID, newID });
+      }
+    });
+    const conflictNewIDs = getConflictNewIDs(changes);
+    if (conflictNewIDs.size > 0) {
+      alert(`检测到以下欲修改ID出现冲突，已跳过相关更新：\n${[...conflictNewIDs].join(', ')}`);
+    }
+    let validChanges = changes.filter(({ newID }) => !conflictNewIDs.has(newID));
+    if (validChanges.length < changes.length) {
+      alert("已跳过有冲突的更新请求，仅应用剩余不冲突的更新");
+    }
+    validChanges.forEach(({ oldID, newID }) => {
+      UpdateBackTrackID(currentFrameIndex, oldID, newID);
+    });
+    renderCurrentFrame();
+  }
+
+  // 检测“多个 oldID -> 相同 newID”冲突
+  function getConflictNewIDs(changes) {
+    const countMap = {};
+    for (let { newID } of changes) {
+      countMap[newID] = (countMap[newID] || 0) + 1;
+    }
+    const conflictSet = new Set();
+    for (let newID in countMap) {
+      if (countMap[newID] > 1) {
+        conflictSet.add(newID);
+      }
+    }
+    return conflictSet;
+  }
+  
+  function UpdateBackTrackID(currentFrameIndex, oldID, newID, rangeLimit) {
+    if (!labelData || !labelData.frames) return;
+    labelData.frames.sort((a,b)=>a.frame_id - b.frame_id);
+    const frames = labelData.frames;
+    let anchorIndex = frames.findIndex(f => f.frame_id === currentFrameIndex);
+    if (anchorIndex < 0) return; 
+    // ====== 向后搜索 =======
+    {
+      let noAppearCount = 0;
+      for (let i=anchorIndex; i<frames.length; i++) {
+        const frm = frames[i];
+        const hasOld = frm.detections.some(d => d.track_id === oldID);
+        const hasNew = frm.detections.some(d => d.track_id === newID);
+        if (hasOld && !hasNew) {
+          frm.detections.forEach(d => {
+            if (d.track_id === oldID) {
+              d.track_id = newID;
+            }
+          });
+          noAppearCount = 0;
+        } else {
+          noAppearCount++;
+          if (noAppearCount >= rangeLimit) {
+            break;
+          }
+        }
+      }
+    }
+  }
+  function UpdatePreTrackID(currentFrameIndex, oldID, newID, rangeLimit) {
     if (!labelData || !labelData.frames) return;
     labelData.frames.sort((a,b)=>a.frame_id - b.frame_id);
     const frames = labelData.frames;
@@ -576,30 +944,7 @@
           noAppearCount = 0;
         } else {
           noAppearCount++;
-          if (noAppearCount >= 30) {
-            break;
-          }
-        }
-      }
-    }
-
-    // ====== 向后搜索 =======
-    {
-      let noAppearCount = 0;
-      for (let i=anchorIndex+1; i<frames.length; i++) {
-        const frm = frames[i];
-        const hasOld = frm.detections.some(d => d.track_id === oldID);
-        const hasNew = frm.detections.some(d => d.track_id === newID);
-        if (hasOld && !hasNew) {
-          frm.detections.forEach(d => {
-            if (d.track_id === oldID) {
-              d.track_id = newID;
-            }
-          });
-          noAppearCount = 0;
-        } else {
-          noAppearCount++;
-          if (noAppearCount >= 30) {
+          if (noAppearCount >= rangeLimit) {
             break;
           }
         }
@@ -648,7 +993,10 @@
 
     document.getElementById('correctionInfo').innerHTML = "";
     document.getElementById('currentFrameTracks').innerHTML = "";
-    document.getElementById('applyFrameUpdatesBtn').style.display = 'none';
+    document.getElementById('rangeFrameUpdateBtn').style.display = 'none';
+    document.getElementById('preFrameUpdateBtn').style.display = 'none';
+    document.getElementById('backFrameUpdateBtn').style.display = 'none';
+    document.getElementById('singleFrameUpdateBtn').style.display = 'none';
   }
 
   /************************************************************
@@ -712,6 +1060,24 @@
   function checkFileExtension(filename, allowedExts) {
     const ext = filename.split('.').pop().toLowerCase();
     return allowedExts.includes(ext);
+  }
+  /************************************************************
+   * 去除所有ID为 -1 的标签
+   ************************************************************/
+  function removeAllMinusOne() {
+    if (!labelData || !labelData.frames) {
+      alert("尚未加载标签文件或解析数据为空。");
+      return;
+    }
+    // 遍历每帧 detections，把 track_id === "-1" 的过滤掉
+    labelData.frames.forEach(frame => {
+      frame.detections = frame.detections.filter(det => det.track_id !== "-1");
+      // 也可能有些数据用数字 -1，则用 det.track_id !== "-1" && det.track_id !== -1
+    });
+    
+    // 去除后重新渲染当前帧
+    renderCurrentFrame();
+    alert("已去除所有 track_id = -1 的标签。");
   }
 </script>
 </body>

@@ -7,7 +7,7 @@ def get_tracker_config(tracker_type):
     """Returns the path to the tracker configuration file."""
     return TRACKER_CONFIGS / f'{tracker_type}.yaml'
 
-def create_tracker(tracker_type, tracker_config=None, reid_weights=None, device=None, half=None, per_class=None, evolve_param_dict=None):
+def create_tracker(tracker_type, tracker_config=None, reid_weights=None, device=None, half=None, db_config=None, mode=None, per_class=None, evolve_param_dict=None):
     """
     Creates and returns an instance of the specified tracker type.
     
@@ -61,6 +61,8 @@ def create_tracker(tracker_type, tracker_config=None, reid_weights=None, device=
     
     # For specific trackers, update tracker arguments with ReID parameters
     if tracker_type in ['strongsort', 'botsort', 'deepocsort', 'hybridsort', 'imprassoc']:
+        tracker_args['db_config'] = db_config
+        tracker_args['mode'] = mode      
         tracker_args['per_class'] = per_class
         tracker_args.update(reid_args)
         if tracker_type == 'strongsort':

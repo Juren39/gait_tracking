@@ -1,7 +1,7 @@
 yolo_model: yolov8n.pt  # YOLO 模型路径
 reid_model: clip_market1501.pt  # ReID 模型路径
 tracking_method: deepocsort  # 跟踪方法
-source: ./files/videos/111db.avi  # 输入源（视频/摄像头）
+source: ./files/videos/probe  # 输入源（视频/摄像头）
 imgsz: [640, 640]  # 推理图像大小
 conf: 0.5  # 置信度阈值
 iou: 0.7  # NMS IoU 阈值
@@ -23,3 +23,11 @@ per_class: false  # 是否按类别跟踪
 agnostic_nms: false  # 是否使用类别无关的 NMS
 verbose: false
 videofps: 10 # 视频帧数，一秒多少帧
+db_config:
+    host: 10.16.9.79
+    port: 3306
+    user: track_test
+    password: '123456'
+    database: track_database
+    charset: utf8mb4
+mode: recognition # annotation, registration, recognition

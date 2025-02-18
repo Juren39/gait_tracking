@@ -13,6 +13,7 @@ from boxmot.utils.association import associate, linear_assignment
 from boxmot.trackers.basetracker import BaseTracker
 from boxmot.utils.ops import xyxy2xysr
 
+from dataset.data_store import check_and_record
 
 def k_previous_obs(observations, cur_age, k):
     if len(observations) == 0:
@@ -221,7 +222,6 @@ class KalmanBoxTracker(object):
         """Should be run after a predict() call for accuracy."""
         return self.kf.md_for_measurement(self.bbox_to_z_func(bbox))
 
-
 class DeepOcSort(BaseTracker):
     """
     DeepOCSort Tracker: A tracking algorithm that utilizes a combination of appearance and motion-based tracking.
@@ -253,6 +253,8 @@ class DeepOcSort(BaseTracker):
         reid_weights: Path,
         device: torch.device,
         half: bool,
+        db_config: dict,
+        mode: str,
         per_class: bool = False,
         det_thresh: float = 0.3,
         max_age: int = 30,
@@ -263,7 +265,7 @@ class DeepOcSort(BaseTracker):
         inertia: float = 0.2,
         w_association_emb: float = 0.5,
         alpha_fixed_emb: float = 0.95,
-        aw_param: float = 0.5,
+        aw_param: float = 0.5,  
         embedding_off: bool = False,
         cmc_off: bool = False,
         aw_off: bool = False,
@@ -275,6 +277,8 @@ class DeepOcSort(BaseTracker):
         """
         Sets key parameters for SORT
         """
+        self.db_config = db_config
+        self.mode = mode
         self.max_age = max_age
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
@@ -301,27 +305,28 @@ class DeepOcSort(BaseTracker):
 
     @BaseTracker.on_first_frame_setup
     @BaseTracker.per_class_decorator
-    def update(self, dets: np.ndarray, img: np.ndarray, embs: np.ndarray = None) -> np.ndarray:
+    def update(self, dets: np.ndarray, img: np.ndarray, box_id: list = None, embs: np.ndarray = None) -> np.ndarray:
         """
         Params:
-          dets - a numpy array of detections in the format [[x1,y1,x2,y2,score],[x1,y1,x2,y2,score],...]
+          dets - a numpy array of detections in the format [[x1,y1,x2,y2,score,cls],[x1,y1,x2,y2,score,cls],...]
         Requires: this method must be called once for each frame even with empty detections
         (use np.empty((0, 5)) for frames without detections).
         Returns the a similar array, where the last column is the object ID.
         NOTE: The number of objects returned may differ from the number of detections provided.
         """
-        #dets, s, c = dets.data
-        #print(dets, s, c)
+        # dets, s, c = dets.data
+        # print(dets, s, c)
         self.check_inputs(dets, img)
 
         self.frame_count += 1
         self.height, self.width = img.shape[:2]
-
+        # 对检测框 dets 进行预处理，筛选出置信度大于 det_thresh（默认 0.3）的目标。
         scores = dets[:, 4]
-        dets = np.hstack([dets, np.arange(len(dets)).reshape(-1, 1)])
+        dets = np.hstack([dets, np.arange(len(dets)).reshape(-1, 1)]) # 给 dets 追加索引编号，便于跟踪数据关联
         assert dets.shape[1] == 7
         remain_inds = scores > self.det_thresh
         dets = dets[remain_inds]
+        # dets -> [x1, y1, x2, y2, score, class_id, det_index]
 
         # appearance descriptor extraction
         if self.embedding_off or dets.shape[0] == 0:
@@ -330,41 +335,49 @@ class DeepOcSort(BaseTracker):
             dets_embs = embs
         else:
             # (Ndets x X) [512, 1024, 2048]
-            dets_embs = self.model.get_features(dets[:, 0:4], img)
+            dets_embs = self.model.get_features(dets[:, 0:4], img) # Re-id外观特征提取 -> dets_embs
 
-        # CMC
+        # CMC处理，全局运动补偿，消除摄像机运动对目标跟踪的影响。
         if not self.cmc_off:
             transform = self.cmc.apply(img, dets[:, :4])
             for trk in self.active_tracks:
                 trk.apply_affine_correction(transform)
 
-        trust = (dets[:, 4] - self.det_thresh) / (1 - self.det_thresh)
+        trust = (dets[:, 4] - self.det_thresh) / (1 - self.det_thresh) #计算并归一化trust
         af = self.alpha_fixed_emb
+        # self.alpha_fixed_emb 是 固定的 alpha 值，用于 特征更新的平滑权重，类似于 指数平滑。
+        # 值越大，表示 新特征对旧特征的影响较小，平滑更新。值越小，表示 新特征更新得更快，适应性更强。
+
         # From [self.alpha_fixed_emb, 1], goes to 1 as detector is less confident
         dets_alpha = af + (1 - af) * (1 - trust)
+        # 计算 dets_alpha，用于更新 ReID 特征
+        # trust 越高，说明检测器置信度越高，1 - trust 就越小，最终 dets_alpha 越接近 self.alpha_fixed_emb，表示 保留更多旧特征。
+        # trust 越低，说明检测器置信度较低，1 - trust 越大，最终 dets_alpha 趋向 1，表示 更快更新新特征。
 
         # get predicted locations from existing trackers.
+        # 预测当前活跃轨迹 self.active_tracks 的下一时刻位置，并获取其外观特征 trk_embs
         trks = np.zeros((len(self.active_tracks), 5))
         trk_embs = []
         to_del = []
         ret = []
         for t, trk in enumerate(trks):
-            pos = self.active_tracks[t].predict()[0]
+            pos = self.active_tracks[t].predict()[0] # 通过 卡尔曼滤波器 预测下一时刻的目标位置
             trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
-            if np.any(np.isnan(pos)):
+            if np.any(np.isnan(pos)): # 如果 pos 包含 NaN 值（可能是由于预测失败或初始化问题）
                 to_del.append(t)
             else:
                 trk_embs.append(self.active_tracks[t].get_emb())
-        trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
+        trks = np.ma.compress_rows(np.ma.masked_invalid(trks)) 
 
-        if len(trk_embs) > 0:
+        if len(trk_embs) > 0: # trk_embs 存储的是 所有活跃轨迹的 ReID 特征向量，用于目标关联匹配。
             trk_embs = np.vstack(trk_embs)
         else:
             trk_embs = np.array(trk_embs)
 
         for t in reversed(to_del):
-            self.active_tracks.pop(t)
-
+            self.active_tracks.pop(t) # 清理无效轨迹
+        
+        #计算运动信息， 最后一次观测的边界框， 历史观测点
         velocities = np.array([trk.velocity if trk.velocity is not None else np.array((0, 0)) for trk in self.active_tracks])
         last_boxes = np.array([trk.last_observation for trk in self.active_tracks])
         k_observations = np.array([k_previous_obs(trk.observations, trk.age, self.delta_t) for trk in self.active_tracks])
@@ -445,6 +458,14 @@ class DeepOcSort(BaseTracker):
                 Q_s_scaling=self.Q_s_scaling,                
                 max_obs=self.max_obs
             )
+            # 用数据库返回的 ID 赋值给 trk.id
+            if self.mode != 'annotation':
+                reid_feature = dets_embs[i]
+                if self.mode == 'registration':
+                    matched_id = check_and_record(reid_feature, self.mode, self.db_config, box_id[i], threshold=0.65)
+                else:
+                    matched_id = check_and_record(reid_feature, self.mode, self.db_config, threshold=0.65)
+                trk.id = matched_id
             self.active_tracks.append(trk)
         i = len(self.active_tracks)
         for trk in reversed(self.active_tracks):
