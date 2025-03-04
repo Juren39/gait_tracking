@@ -1,32 +1,64 @@
-import hashlib
-import pymysql
 import json
-import numpy as np
+import base64
 import pickle
-import yaml
+import os
+import numpy as np
 
-def serialize_vector(vec: np.ndarray) -> bytes:
-    """
-    将 numpy 向量序列化为 bytes，便于存储在 BLOB 中。
-    也可改用其他方式 (JSON等)，但 pickle 更简单。
-    """
-    return pickle.dumps(vec, protocol=pickle.HIGHEST_PROTOCOL)
+def vector_to_b64(vec: np.ndarray) -> str:
+    """将 numpy 向量序列化并做 base64 编码，以便存入 json."""
+    raw_bytes = pickle.dumps(vec, protocol=pickle.HIGHEST_PROTOCOL)
+    return base64.b64encode(raw_bytes).decode('utf-8')
 
-def deserialize_vector(data: bytes) -> np.ndarray:
+def b64_to_vector(b64_str: str) -> np.ndarray:
+    """将 base64 字符串解码并反序列化为 numpy 向量."""
+    raw_bytes = base64.b64decode(b64_str.encode('utf-8'))
+    return pickle.loads(raw_bytes)
+
+def load_local_db(filepath: str) -> list:
     """
-    反序列化 bytes 为 numpy 向量
+    从本地文件读取 JSON lines，每行一个记录。
+    返回记录的列表，每个记录是类似:
+    {
+      "id": int,
+      "name": str,
+      "reid_feature": <base64>,
+      "gait_feature": <base64 or None>
+    }
+    若文件不存在，返回空列表。
     """
-    return pickle.loads(data)
+    if not os.path.isfile(filepath):
+        return []
+    
+    rows = []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            data = json.loads(line)
+            rows.append(data)
+    return rows
+
+def save_local_db(filepath: str, rows: list):
+    """
+    将记录列表写回本地文件，每条记录一行 JSON。
+    文件将被覆盖写入。
+    """
+    with open(filepath, 'w', encoding='utf-8') as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 def compute_cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     """
     计算余弦相似度
     """
+    v2_f = v2.flatten()
+
     v1_norm = np.linalg.norm(v1)
-    v2_norm = np.linalg.norm(v2)
+    v2_norm = np.linalg.norm(v2_f)
     if v1_norm < 1e-12 or v2_norm < 1e-12:
         return 0.0
-    return float(np.dot(v1, v2) / (v1_norm * v2_norm))
+    return float(np.dot(v1, v2_f) / (v1_norm * v2_norm))
 
 def normalize(vec: np.ndarray) -> np.ndarray:
     """
@@ -39,114 +71,225 @@ def normalize(vec: np.ndarray) -> np.ndarray:
 
 def check_and_record(
     reid_feature: np.ndarray,
+    gait_feature: np.ndarray,
     mode: str,
-    db_config: dict,
+    local_file: str,
     track_id: str = None, 
     threshold: float = 0.65,
 ) -> int:
     """
-    在数据库中检索或注册新的 ReID 特征。
+    在本地文件中检索或注册新的 ReID/步态特征。
 
     参数:
-    - reid_feature: 传入的目标的特征向量 (np.ndarray).
-    - db_config: 数据库连接参数 (dict).
-    - threshold: 匹配阈值; 余弦相似度高于此值认为是同一实体.
+    - reid_feature: 传入的目标的 ReID 特征向量 (np.ndarray).
+    - gait_feature: 传入的目标的 步态特征向量 (np.ndarray).
     - mode: 'registration' 或 'recognition'.
-        'registration': 允许在匹配到同一ID时更新数据库特征；未匹配则新建.
-        'recognition': 只查询，不更新已有特征; 未匹配时返回 -1.
-    
+        'registration': 允许在匹配到同一ID时更新; 未匹配则新建.
+        'recognition': 只查询，不更新; 未匹配则返回 -1.
+    - local_file: 存放数据的本地JSON行文件 (默认: person_reid_local.jsonl).
+    - track_id: 目标的名字或跟踪ID (str), 在 'registration' 模式下存表时会用作 name.
+    - threshold: 匹配阈值; 余弦相似度高于此值认为是同一实体.
+
     返回:
-    - matched_id: 如果成功匹配则返回对应的数据库 ID，否则:
+    - matched_id: 若成功匹配则返回对应的 "id"；否则:
         - 在 'registration' 模式下插入新记录后返回新ID
         - 在 'recognition' 模式下未匹配则返回 -1
     """
-    connection = pymysql.connect(**db_config)
-    try:
-        with connection.cursor() as cursor:
-            # 先把数据库里所有记录都取出来 (仅示例，实际可用更高效的向量检索)
-            sql = "SELECT id, name, feature, feature_dim FROM person_reid"
-            cursor.execute(sql)
-            rows = cursor.fetchall()
+    # 读取本地所有记录
+    rows = load_local_db(local_file)
 
-        max_sim = -1.0
-        matched_id = -1
-        matched_num_id = -1
-        matched_feature = None  # 记录与其匹配的旧特征，用于做更新
+    # 当前最大ID (自增用)
+    current_ids = [r["id"] for r in rows] if rows else []
+    max_id = max(current_ids) if current_ids else 0
 
-        # 遍历已存特征
-        for row in rows:
-            num_id = row[0]
-            db_id = row[1]
-            db_feature_bytes = row[2]
-            db_feature_dim = row[3]
-            db_feature = deserialize_vector(db_feature_bytes)
-            if len(db_feature) != db_feature_dim:
-                # 理论上不应发生，如有就需要数据清洗
-                continue
-            if mode == 'registration':
-                if db_id == track_id:
-                    matched_id = db_id
-                    matched_feature = db_feature
-                    alpha = 0.9  # 这个值可以根据需要调整
-                    updated_feature = alpha * matched_feature + (1 - alpha) * reid_feature
-                    updated_feature = normalize(updated_feature)
-                    updated_bytes = serialize_vector(updated_feature)
-                    with connection.cursor() as cursor:
-                        update_sql = "UPDATE person_reid SET feature=%s, feature_dim=%s WHERE name=%s"
-                        cursor.execute(update_sql, (updated_bytes, len(updated_feature), track_id))
-                    connection.commit()
-                    return matched_id
-            else:
-                sim = compute_cosine_similarity(reid_feature, db_feature)
-                if sim > max_sim:
-                    max_sim = sim
-                    matched_num_id = num_id
-                    matched_feature = db_feature
+    max_sim = -1.0
+    matched_index = -1   # rows 里的索引
+    matched_id = -1      # 自增ID
+    matched_name = None
 
-        # 没有找到目标
-        if mode == 'registration':
-            # 注册模式: 新建一条记录
-            new_feature = normalize(reid_feature)
-            new_feature_bytes = serialize_vector(new_feature)
-            with connection.cursor() as cursor:
-                insert_sql = "INSERT INTO person_reid (name, feature, feature_dim) VALUES (%s, %s, %s)"
-                cursor.execute(insert_sql, (track_id, new_feature_bytes, len(new_feature)))
-            connection.commit()
-            return track_id
+    # 遍历已存特征
+    for i, row in enumerate(rows):
+        num_id = row["id"]
+        db_name = row["name"]          # str
+        db_reid_b64 = row.get("reid_feature")
+        db_gait_b64 = row.get("gait_feature")
+
+        # 反序列化
+        db_reid_vec = b64_to_vector(db_reid_b64) if db_reid_b64 else None
+        db_gait_vec = b64_to_vector(db_gait_b64) if db_gait_b64 else None
+
+        # 如果是 'registration' 模式，且 db_name == track_id，则直接更新
+        if mode == 'registration' and db_name == track_id:
+            matched_index = i
+            matched_id = num_id
+            matched_name = db_name
+            break
+
+        # 否则在 'recognition' 模式或无法直接匹配 name 时，计算相似度(仅用 reid_feature)
+        if db_reid_vec is not None:
+            sim = compute_cosine_similarity(reid_feature, db_reid_vec)
+            if sim > max_sim:
+                max_sim = sim
+                matched_index = i
+                matched_id = num_id
+                matched_name = db_name
+
+    if mode == 'registration' and matched_name == track_id:
+        alpha = 0.9
+        old_reid = b64_to_vector(rows[matched_index]["reid_feature"])
+        old_gait = b64_to_vector(rows[matched_index]["gait_feature"]) if rows[matched_index]["gait_feature"] else None
+
+        updated_reid = alpha * old_reid + (1 - alpha) * reid_feature
+        updated_reid = normalize(updated_reid)
+        updated_gait = alpha * old_gait + (1 - alpha) * gait_feature
+        updated_gait = normalize(updated_gait)
+
+        rows[matched_index]["reid_feature"] = vector_to_b64(updated_reid)
+        if updated_gait is not None:
+            rows[matched_index]["gait_feature"] = vector_to_b64(updated_gait)
+
+        save_local_db(local_file, rows)
+        return matched_id
+
+    elif mode == 'recognition':
+        if max_sim >= threshold:
+            return matched_id  # 返回已存在的ID
         else:
-            # 识别模式: 不更新, 返回-1
-            if max_sim >= threshold:
-                return matched_num_id
-            else:
-                return -1
-    finally:
-        connection.close()
+            return -1          # 未匹配
+    else:
+        new_id = max_id + 1
+        new_reid = normalize(reid_feature)
+        new_reid_b64 = vector_to_b64(new_reid)
+        new_gait_b64 = None
+        if gait_feature is not None:
+            new_gait = normalize(gait_feature)
+            new_gait_b64 = vector_to_b64(new_gait)
+    
+        new_row = {
+            "id": new_id,
+            "name": track_id, 
+            "reid_feature": new_reid_b64,
+            "gait_feature": new_gait_b64
+        }
+        rows.append(new_row)
+        save_local_db(local_file, rows)
+    return new_id
 
-def save_id_name_mapping(db_config, output_file="id_name_mapping.txt"):
+def check_test(
+    gait_feature: np.ndarray,
+    local_file: str = "person_reid_local.jsonl",
+    threshold: float = 0.65,
+) -> int:
     """
-    连接数据库，查询 `person_reid` 表中的 `id` 和 `name`，并保存到本地 txt 文件中。
-
-    参数:
-    - db_config: 数据库连接配置字典
-    - output_file: 保存的 txt 文件名 (默认: id_name_mapping.txt)
+    在本地文件中，用 gait_feature 去匹配已存条目（只查询，不更新）。
+    如果相似度 >= threshold，则返回匹配到的 ID，否则返回 -1。
     """
-    connection = pymysql.connect(**db_config)
-    try:
-        with connection.cursor() as cursor:
-            query = "SELECT id, name FROM person_reid"
-            cursor.execute(query)
-            rows = cursor.fetchall()
+    rows = load_local_db(local_file)
 
-        with open(output_file, "w", encoding="utf-8") as f:
-            for row in rows:
-                person_id, name = row
-                name = name if name else "Unknown"  # 处理 name 可能为空的情况
-                f.write(f"{person_id}: {name}\n")
+    max_sim = -1.0
+    matched_id = -1
 
-        print(f"✅ ID-Name 映射关系已保存至: {output_file}")
+    for row in rows:
+        num_id = row["id"]
+        db_gait_b64 = row.get("gait_feature")
+        if db_gait_b64 is None:
+            continue
+        db_gait_vec = b64_to_vector(db_gait_b64)
 
-    except Exception as e:
-        print(f"❌ 发生错误: {e}")
+        sim = compute_cosine_similarity(gait_feature, db_gait_vec)
+        if sim > max_sim:
+            max_sim = sim
+            matched_id = num_id
 
-    finally:
-        connection.close()
+    if max_sim >= threshold:
+        return matched_id
+    else:
+        return -1
+    
+def load_existing_id_mapping(mapping_file):
+    """
+    读取已有的id映射表 (如果存在)，返回一个字典和当前最大编号。
+    文件格式：每行 => <顺序编号> <track_id>
+    """
+    id_map = {}   # 用于存储 track_id -> 顺序编号
+    max_idx = 0   # 当前已经使用的最大编号
+    
+    if mapping_file.is_file():
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                # 假设一行是: "1 101" or "2 叶顶强"
+                parts = line.split(maxsplit=1)
+                if len(parts) < 2:
+                    continue
+                idx_str, raw_id = parts
+                idx = int(idx_str)
+                id_map[raw_id] = idx
+                if idx > max_idx:
+                    max_idx = idx
+    return id_map, max_idx
+
+def save_id_mapping(mapping_file, id_map):
+    """
+    将 id_map (track_id -> 顺序编号) 按照顺序编号排序，写回到TXT中。
+    """
+    # 这里我们想要按照 value（即顺序编号）从小到大排序
+    sorted_items = sorted(id_map.items(), key=lambda x: x[1])
+    
+    with open(mapping_file, 'w', encoding='utf-8') as f:
+        for raw_id, idx in sorted_items:
+            f.write(f"{idx} {raw_id}\n")
+
+def get_track_number_by_id(mapping_file, track_id, encoding='utf-8'):
+    """
+    从映射文件中查找给定的 track_id 对应的顺序编号。
+    """
+    if not os.path.isfile(mapping_file):
+        # 如果文件不存在，则直接返回 None(或可以抛异常)
+        return None
+    
+    with open(mapping_file, 'r', encoding=encoding) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # 假设每行格式：“<顺序编号> <track_id>”
+            parts = line.split(maxsplit=1)
+            if len(parts) < 2:
+                continue
+            idx_str, raw_id = parts
+            # 若匹配到，就返回对应编号
+            if raw_id == track_id:
+                return int(idx_str)
+    
+    # 文件里没有找到对应 track_id
+    return None
+
+def get_track_id_by_number(mapping_file, number, encoding='utf-8'):
+    """
+    从映射文件中查找给定的编号对应的 track_id。
+    """
+
+    if not os.path.isfile(mapping_file):
+        return None  # 文件不存在，直接返回 None
+    
+    with open(mapping_file, 'r', encoding=encoding) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # 假设每行格式："<顺序编号> <track_id>"
+            parts = line.split(maxsplit=1)
+            if len(parts) < 2:
+                continue
+            idx_str, raw_id = parts
+            try:
+                idx = int(idx_str)  # 转换为整数编号
+                if idx == number:
+                    return raw_id  # 找到匹配的编号，返回对应 track_id
+            except ValueError:
+                continue  # 遇到格式错误的行，跳过
+
+    return None  # 如果没有找到匹配的编号，返回 None

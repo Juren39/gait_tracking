@@ -164,7 +164,7 @@ class BaseTracker(ABC):
                 return np.vstack(per_class_tracks) if per_class_tracks else np.empty((0, 8))
             else:
                 # Process all detections at once if per_class is False
-                return update_method(self, dets=dets, img=img, box_id=box_id, embs=embs)
+                return update_method(self, dets=dets, img=img, embs=embs)
         return wrapper
 
 

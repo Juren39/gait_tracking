@@ -24,7 +24,7 @@ from ultralytics.utils.plotting import Annotator, colors
 from ultralytics.data.utils import VID_FORMATS
 from ultralytics.utils.plotting import save_one_box
 
-from dataset.data_store import save_id_name_mapping
+from dataset.data_store import load_existing_id_mapping,save_id_mapping,get_track_number_by_id
 
 def on_predict_start(predictor, persist=False):
     assert predictor.custom_args['tracking_method'] in TRACKERS, \
@@ -32,14 +32,16 @@ def on_predict_start(predictor, persist=False):
 
     tracking_config = TRACKER_CONFIGS / (predictor.custom_args['tracking_method'] + '.yaml')
     trackers = []
+    print(predictor.custom_args['gait_model'])
     for i in range(predictor.dataset.bs):
         tracker = create_tracker(
             predictor.custom_args['tracking_method'],
             tracking_config,
             predictor.custom_args['reid_model'],
+            predictor.custom_args['gait_model'],
             predictor.device,
             predictor.custom_args['half'],
-            predictor.custom_args['db_config'],
+            predictor.custom_args['save_file'],
             predictor.custom_args['mode'],
             predictor.custom_args['per_class']
         )
@@ -53,6 +55,7 @@ def on_predict_start(predictor, persist=False):
 def run(args):
     yolo_model = args['yolo_model']
     reid_model = args['reid_model']
+    gait_model = args['gait_model']
     tracking_method = args['tracking_method']
     source = args['source']
     imgsz = args['imgsz'] or default_imgsz(yolo_model)
@@ -74,7 +77,7 @@ def run(args):
     agnostic_nms = args['agnostic_nms']
     verbose = args['verbose']
     videofps = args['videofps']
-    db_config = args['db_config']
+    save_file = args['save_file']
     mode = args['mode']
 
     if mode == "registration":
@@ -97,8 +100,8 @@ def run(args):
         video_output_path = Path('./output') / name / 'visualization' / f'{source_file_name}_tracked.mp4'
         label_output_path = Path('./output') / name / 'labels' / f'{source_file_name}_labels.txt'
         origin_to_mp4_path = Path('./output') / name / 'videos' / f'{source_file_name}.mp4'
-        id_name_out_path = Path('./dataset/id_name_mapping.txt')
-        id_name_out_path.parent.mkdir(parents=True, exist_ok=True)
+        mapping_file = Path('./dataset/id_name_mapping.txt')
+        mapping_file.parent.mkdir(parents=True, exist_ok=True)
         video_output_path.parent.mkdir(parents=True, exist_ok=True)
         label_output_path.parent.mkdir(parents=True, exist_ok=True)
         origin_to_mp4_path.parent.mkdir(parents=True, exist_ok=True)
@@ -118,48 +121,56 @@ def run(args):
                 tracker_type=args['tracking_method'],
                 tracker_config=tracking_config,  
                 reid_weights=args['reid_model'],
+                gait_weights=args['gait_model'],
                 device=device,
                 half=args['half'],
-                db_config=db_config,
+                save_file=save_file,
                 mode=mode,
                 per_class=args['per_class'],
             )
             cap = cv2.VideoCapture(str(origin_to_mp4_path))
             fps = cap.get(cv2.CAP_PROP_FPS)
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            frame_idx = 0
 
             progress_bar = (
                 tqdm(total=total_frames, desc="Processing frames", unit="frame", dynamic_ncols=True, leave=True)
                 if ~verbose else None
             )
-
+            id_map, max_idx = load_existing_id_mapping(mapping_file)
+            frames_list = []
+            dets_list = []
+            frame_idx = 0
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
-
-                dets, box_id = load_json_bboxes(Path(source) / 'labels' / f'{source_file_name}_labels.txt', frame_idx)  
-                # 假设返回 (N,6): [x1,y1,x2,y2,score,cls]
-
-                # 调用 tracker.update(dets, frame)
-                tracks = tracker.update(dets, frame, box_id)  # DeepOcSort
-                # 统计出现的 ID
-                for track in tracks:
-                    track_id = track[4]  # 获取当前 track_id
-                    if track_id not in registered_ids:
-                        registered_ids.add(track_id)
-                        id_info_list.append({
-                            "track_id": track_id,
-                            "frame_idx": frame_idx
-                        })
+                frames_list.append(frame)
+                dets, id_list = load_json_bboxes(Path(source) / 'labels' / f'{source_file_name}_labels.txt', frame_idx)  # [x1, y1, x2, y2, confidence, cls, track_id]
+                # 遍历每个检测框，获取 track_id
+                for i, box in enumerate(dets):
+                    track_id = id_list[i]
+                    # 若该 track_id 未在映射表里，则分配新的顺序编号
+                    if track_id not in id_map:
+                        max_idx += 1
+                        id_map[track_id] = max_idx
+                new_column = np.array([[id_map[id_list[i]]] for i in range(len(dets))]).reshape(-1, 1)  # (N, 1)
+                dets = np.hstack((dets, new_column))  # (N, M+1)
+                dets_list.append(dets)
+                # 假设返回 (N,7): [x1,y1,x2,y2,score,cls,track_id]
                 progress_bar.update(1)
                 frame_idx += 1
-            
-            cap.release()
             progress_bar.close()
+            save_id_mapping(mapping_file, id_map)
+            print('registration start!')
+            box_id_list = tracker.registration(dets_list, frames_list)
+            # 统计出现的 ID
+            for track_id in box_id_list:
+                if track_id not in registered_ids:
+                    registered_ids.add(track_id)
+                    id_info_list.append({
+                        "track_id": track_id,
+                    })
+            cap.release()
+            print('registration end!')
 
         else:
             if imgsz is None:
@@ -227,7 +238,7 @@ def run(args):
             for r in results:
                 tracks_info = []
                 img = yolo.predictor.trackers[0].plot_results(r.orig_img, show_trajectories)
-                for box in r.boxes:
+                for box in r.boxes: # [d, [trk.id], [trk.conf], [trk.cls]]
                    # 坐标
                     x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                     conf_val = float(box.conf[0].cpu().item())
@@ -264,12 +275,10 @@ def run(args):
             print(f"label file saved to: {label_output_path.resolve()}")
     
     if mode == 'registration':
-        save_id_name_mapping(db_config, id_name_out_path)
         print(f"📌 Registration 模式完成，共注册 {len(registered_ids)} 个 ID")
-        print(f"🏷️ 相关映射关系已经打印至: {id_name_out_path}")
         print("📋 详细信息:")
         for info in id_info_list:
-            print(f"🔹 First Appear Frame :{info['frame_idx']}, ID :{info['track_id']}")
+            print(f"🔹 ID :{info['track_id']}")
     else:
         print(f"📌 Recognition 模式完成，共检测 {len(video_files)} 个视频")
     
@@ -293,7 +302,7 @@ def convert_to_mp4(input_path, output_path, videofps):
     with open("./dataset/ffmpeg_log.txt", "w") as log_file:
         subprocess.run(command, stdout=log_file, stderr=log_file)
 
-def load_json_bboxes(json_path: str, frame_idx: int) -> np.ndarray:
+def load_json_bboxes(json_path: str, frame_idx: int) -> np.ndarray: #main方法中的load_json_bboxes对应的track_id以及id问题，需要修复annotation模式标注出来的文本。
     """
     从上述 JSON 文件中读取指定 frame_idx 的检测框信息，返回形如 (N, 6) 的 array:
       [x1, y1, x2, y2, score, cls]
@@ -313,19 +322,19 @@ def load_json_bboxes(json_path: str, frame_idx: int) -> np.ndarray:
     # 提取 detections
     detections = cur_frame_data.get('detections', [])
     bboxes = []
-    box_id = []
+    id_list = []
     for det in detections:
         # 解析
         confidence = float(det['confidence'])
         cls = float(det['class_id'])  # 如果 class_id 全是 int，可以转成 float32
         x1, y1, x2, y2 = det['bbox']  # bbox是list: [x1, y1, x2, y2]
         bboxes.append([x1, y1, x2, y2, confidence, cls])
-        box_id.append(det['track_id'])
+        id_list.append(det['track_id'])
 
     if len(bboxes) == 0:
-        return np.empty((0, 6), dtype=np.float32), box_id
+        return np.empty((0, 7), dtype=np.float32), id_list
     
-    return np.array(bboxes, dtype=np.float32), box_id
+    return np.array(bboxes, dtype=np.float32), id_list
 
 def draw_tracking_results(image, tracks):
     for track in tracks:
@@ -342,6 +351,7 @@ def parse_opt():
         config = yaml.safe_load(f)
     config['yolo_model'] = Path(config['yolo_model'])  
     config['reid_model'] = Path(config['reid_model'])  
+    config['gait_model'] = Path(config['gait_model']) 
     config['tracking_method'] = str(config['tracking_method'])  
     config['source'] = str(config['source'])  
     config['imgsz'] = list(map(int, config['imgsz'])) if isinstance(config['imgsz'], list) else config['imgsz']  
@@ -363,7 +373,7 @@ def parse_opt():
     config['agnostic_nms'] = bool(config['agnostic_nms'])  
     config['verbose'] = bool(config['verbose'])
     config['videofps'] = str(config['videofps'])
-    config['db_config'] = dict(config['db_config'])
+    config['save_file'] = Path(config['save_file'])
     config['mode'] = str(config['mode'])
 
     return config

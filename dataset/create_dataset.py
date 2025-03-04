@@ -19,17 +19,17 @@ def create_table(db_config):
     try:
         with connection.cursor() as cursor:
             create_sql = """
-            CREATE TABLE IF NOT EXISTS person_reid (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(255) DEFAULT NULL,
-                feature LONGBLOB NOT NULL,
-                feature_dim INT DEFAULT 512,
-                update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                CREATE TABLE IF NOT EXISTS person_reid (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(255) DEFAULT NULL,
+                    reid_feature LONGBLOB NOT NULL,
+                    gait_feature LONGBLOB NOT NULL,
+                    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """
             cursor.execute(create_sql)
         connection.commit()
-        print("✅ 表 `reid_features` 创建成功！")   
+        print("✅ 表 `person_reid` 创建成功！")   
     except Exception as e:
         print("❌ 创建表时出错:", e)
     finally:

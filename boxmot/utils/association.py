@@ -144,7 +144,7 @@ def associate(
     valid_mask[np.where(previous_obs[:, 4] < 0)] = 0
 
     iou_matrix = asso_func(detections, trackers)
-    #iou_matrix = iou_batch(detections, trackers)
+    # iou_matrix = iou_batch(detections, trackers)
     scores = np.repeat(detections[:, -1][:, np.newaxis], trackers.shape[0], axis=1)
     # iou_matrix = iou_matrix * scores # a trick sometiems works, we don't encourage this
     valid_mask = np.repeat(valid_mask[:, np.newaxis], X.shape[1], axis=1)

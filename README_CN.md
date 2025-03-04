@@ -30,7 +30,7 @@ yolo_model: "./weights/yolov8s.pt"
 source: "./data/demo.mp4"
 ```
 要更改追踪的视频请将source路径改为输入视频路径。
-
+项目所需的re-id模型和yolo模型会自动下载到本项目根目录下，步态模型目前需要自己准备
 ### 3. 运行项目
 直接在主文件夹中运行主程序：
 ```bash

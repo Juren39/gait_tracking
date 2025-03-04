@@ -10,15 +10,15 @@ ffmpeg version 3.4.11-0ubuntu0.1 Copyright (c) 2000-2022 the FFmpeg developers
   libswscale      4.  8.100 /  4.  8.100
   libswresample   2.  9.100 /  2.  9.100
   libpostproc    54.  7.100 / 54.  7.100
-Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'files/videos/probe/视频_录像_2025_1_21_11_36_46_351.mp4':
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'files/videos/probe/视频_录像_2025_1_21_11_36_15_34.mp4':
   Metadata:
     major_brand     : isom
     minor_version   : 512
     compatible_brands: isomiso2avc1mp41
     encoder         : Lavf57.83.100
-  Duration: 00:00:39.90, start: 0.000000, bitrate: 568 kb/s
-    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 704x576, 567 kb/s, 10 fps, 10 tbr, 10240 tbn, 20 tbc (default)
+  Duration: 00:00:29.40, start: 0.000000, bitrate: 303 kb/s
+    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuvj420p(pc), 704x576, 302 kb/s, 10 fps, 10 tbr, 10240 tbn, 20 tbc (default)
     Metadata:
       handler_name    : VideoHandler
-Codec AVOption b (set bitrate (in bits/s)) specified for output file #0 (output/yolo_clip/videos/视频_录像_2025_1_21_11_36_46_351.mp4) has not been used for any stream. The most likely reason is either wrong type (e.g. a video option with no video streams) or that it is a private option of some encoder which was not actually used for any stream.
-File 'output/yolo_clip/videos/视频_录像_2025_1_21_11_36_46_351.mp4' already exists. Exiting.
+Codec AVOption b (set bitrate (in bits/s)) specified for output file #0 (output/yolo_clip/videos/视频_录像_2025_1_21_11_36_15_34.mp4) has not been used for any stream. The most likely reason is either wrong type (e.g. a video option with no video streams) or that it is a private option of some encoder which was not actually used for any stream.
+File 'output/yolo_clip/videos/视频_录像_2025_1_21_11_36_15_34.mp4' already exists. Exiting.

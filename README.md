@@ -31,6 +31,7 @@ yolo_model: "./weights/yolov8s.pt"
 source: "./data/demo.mp4"
 ```
 To change the video being tracked, update the `source` path to the desired input video path.
+The required Re-ID model and YOLO model for the project will be automatically downloaded to the root directory of this project. However, the gait model currently needs to be prepared manually.
 
 ### 3. Run the Project
 Run the main program directly from the root folder:

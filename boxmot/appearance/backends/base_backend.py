@@ -33,7 +33,6 @@ class BaseModelBackend:
         self.checker = RequirementsChecker()
         self.load_model(self.weights)
 
-
     def get_crops(self, xyxys, img):
         h, w = img.shape[:2]
         resize_dims = (128, 256)

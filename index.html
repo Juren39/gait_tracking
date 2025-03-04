@@ -266,6 +266,10 @@
     <button id="backFrameUpdateBtn" style="display:none;">后段范围修改</button>
     <button id="singleFrameUpdateBtn" style="display:none;">单帧修改</button>
   </div>
+  <!-- 显示所有出现的 ID 及其首次出现的帧 -->
+  <div id="trackIDPanel" style="margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 5px;">
+    <h3>已检测 ID</h3>
+  </div>
 </div>
 
 <script>
@@ -445,6 +449,7 @@
       } else {
         originalJsonBaseName = fileName;
       }
+      extractTrackIDs(labelData.frames);
       loadVideoFile(videoFile);
     };
     reader.readAsText(jsonFile); 
@@ -672,6 +677,7 @@
       UpdateTrackID(currentFrameIndex, oldID, newID, rangeLimit);
     });
     renderCurrentFrame();
+    extractTrackIDs(labelData.frames);
   }
 
   // 检测“多个 oldID -> 相同 newID”冲突
@@ -782,6 +788,7 @@
       }
     });
     renderCurrentFrame();
+    extractTrackIDs(labelData.frames);
   }
 
   // 检测“多个 oldID -> 相同 newID”冲突
@@ -837,6 +844,7 @@
       UpdatePreTrackID(currentFrameIndex, oldID, newID, rangeLimit);
     });
     renderCurrentFrame();
+    extractTrackIDs(labelData.frames);
   }
 
   function applyBackFrameUpdates() {
@@ -875,6 +883,7 @@
       UpdateBackTrackID(currentFrameIndex, oldID, newID);
     });
     renderCurrentFrame();
+    extractTrackIDs(labelData.frames);
   }
 
   // 检测“多个 oldID -> 相同 newID”冲突
@@ -1076,8 +1085,45 @@
     });
     
     // 去除后重新渲染当前帧
-    renderCurrentFrame();
+    renderCurrentFrame();s
     alert("已去除所有 track_id = -1 的标签。");
+  }
+  /************************************************************
+   * 提取所有 track_id 及其首次出现的帧
+   ************************************************************/
+   function extractTrackIDs(frames) {
+    const trackInfo = {}; // 存储 track_id -> 首次出现的帧
+
+    frames.forEach(frame => {
+        const frameID = frame.frame_id;
+        frame.detections.forEach(det => {
+            const trackID = det.track_id;
+            if (!(trackID in trackInfo)) {
+                trackInfo[trackID] = frameID; // 记录首次出现的帧
+            }
+        });
+    });
+    // 更新 UI 显示 ID 信息
+    updateTrackIDList(trackInfo);
+  }
+  function updateTrackIDList(trackInfo) {
+    const trackPanel = document.getElementById("trackIDPanel");
+    trackPanel.innerHTML = "<h3>已检测 ID</h3>";
+
+    const list = document.createElement("ul");
+    list.style.maxHeight = "200px";
+    list.style.overflowY = "auto";
+    list.style.border = "1px solid #ddd";
+    list.style.padding = "10px";
+    list.style.background = "#fff";
+    
+    Object.entries(trackInfo).forEach(([trackID, frameID]) => {
+        const item = document.createElement("li");
+        item.textContent = `ID: ${trackID} - 首次出现帧: ${frameID}`;
+        list.appendChild(item);
+    });
+
+    trackPanel.appendChild(list);
   }
 </script>
 </body>

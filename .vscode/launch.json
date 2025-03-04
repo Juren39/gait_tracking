@@ -36,7 +36,7 @@
             "name": "Python: main.py",
             "type": "debugpy",              
             "request": "launch",
-            "program": "/home/jsj/yolo_track/main.py",  // 这里改成你的 main.py 路径
+            "program": "/home/jsj/gait_tracking/main.py",  // 这里改成你的 main.py 路径
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
