@@ -32,7 +32,6 @@ def on_predict_start(predictor, persist=False):
 
     tracking_config = TRACKER_CONFIGS / (predictor.custom_args['tracking_method'] + '.yaml')
     trackers = []
-    print(predictor.custom_args['gait_model'])
     for i in range(predictor.dataset.bs):
         tracker = create_tracker(
             predictor.custom_args['tracking_method'],

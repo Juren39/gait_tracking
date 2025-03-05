@@ -14,7 +14,7 @@ from boxmot.utils.association import associate, linear_assignment
 from boxmot.trackers.basetracker import BaseTracker
 from boxmot.utils.ops import xyxy2xysr
 
-from dataset.data_store import check_and_record, get_track_id_by_number, check_test
+from dataset.data_store import check_and_record, get_track_id_by_number
 
 def k_previous_obs(observations, cur_age, k):
     if len(observations) == 0:
@@ -130,7 +130,6 @@ class KalmanBoxTracker(object):
 
         self.frozen = False
 
-        # self.track_id = 0  # 数据库匹配 ID,0即为尚在识别中
 
     def update(self, det):
         """
@@ -225,12 +224,6 @@ class KalmanBoxTracker(object):
         """Should be run after a predict() call for accuracy."""
         return self.kf.md_for_measurement(self.bbox_to_z_func(bbox))
     
-    def is_ready_for_embedding(self):
-        """
-        只有当轨迹满 30 帧时，才能计算特征
-        """
-        return len(self.trajectory_buffer) == 30
-    
     def update_trajectory(self, img, det):
         """
         更新历史步态轨迹，具体存储形式为检测框图片。
@@ -241,11 +234,12 @@ class KalmanBoxTracker(object):
         x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w - 1, x2), min(h - 1, y2)
         self.trajectory_buffer.append(img[y1:y2, x1:x2])
 
-    def should_match_db(self):
+    def should_match_gait(self):
         """
         攒够足够长的长度，需要推进去得到轨迹的步态特征
         """
-        return len(self.trajectory_buffer) >= 50
+        return len(self.trajectory_buffer) >= self.max_obs
+
 class DeepOcSort(BaseTracker):
     """
     DeepOCSort Tracker: A tracking algorithm that utilizes a combination of appearance and motion-based tracking.
@@ -362,22 +356,6 @@ class DeepOcSort(BaseTracker):
         elif embs is not None:
             dets_embs = embs
         else:
-            # (Ndets x X) [512, 1024, 2048]
-
-            ##############################
-            # 实验1: re-id特征全部换成gait特征的影响
-            # embedding_list = []
-            # for det in dets:
-            #     x1, y1, x2, y2 = det[:4].astype(int)
-            #     h, w = img.shape[:2]
-            #     x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w - 1, x2), min(h - 1, y2)
-            #     crop_img = img[y1:y2, x1:x2]
-            #     embedding = self.gait_model.extract_gait_feature([crop_img])
-            #     # 3) 收集到列表中
-            #     embedding_list.append(embedding)
-            # # 4) 把列表拼成 (N, emb_dim) 的二维结构 (numpy 或 torch)
-            #    比如若 embedding 是 numpy 向量，直接 np.stack
-            # dets_embs = np.stack(embedding_list, axis=0)
             dets_embs = self.model.get_features(dets[:, 0:4], img) # Re-id外观特征提取 -> dets_embs
         # CMC处理，全局运动补偿，消除摄像机运动对目标跟踪的影响。
         if not self.cmc_off:
@@ -451,9 +429,17 @@ class DeepOcSort(BaseTracker):
             self.aw_param,
         )
         for m in matched:
-            self.active_tracks[m[1]].update(dets[m[0], :])
-            self.active_tracks[m[1]].update_emb(dets_embs[m[0]], alpha=dets_alpha[m[0]])
-            self.active_tracks[m[1]].update_trajectory(img, dets[m[0], :])
+            trk = self.active_tracks[m[1]]
+            trk.update(dets[m[0], :])
+            trk.update_emb(dets_embs[m[0]], alpha=dets_alpha[m[0]])
+            if self.mode == "recognition":
+                trk.update_trajectory(img, dets[m[0], :])
+                if trk.should_match_gait() and trk.gait_feature is None:
+                    trk.gait_feature = self.gait_model.extract_gait_feature(
+                        trk.trajectory_buffer)
+                    trk.id = check_and_record(
+                        trk.emb, trk.gait_feature, self.mode, self.save_file, trk.id, threshold=0.65) 
+                    print(trk.id)
 
         """
             Second round of associaton by OCR
@@ -483,9 +469,17 @@ class DeepOcSort(BaseTracker):
                     det_ind, trk_ind = unmatched_dets[m[0]], unmatched_trks[m[1]]
                     if iou_left[m[0], m[1]] < self.iou_threshold:
                         continue
-                    self.active_tracks[trk_ind].update(dets[det_ind, :])
-                    self.active_tracks[trk_ind].update_emb(dets_embs[det_ind], alpha=dets_alpha[det_ind])
-                    self.active_tracks[m[1]].update_trajectory(img, dets[det_ind, :])
+                    trk = self.active_tracks[trk_ind]
+                    trk.update(dets[det_ind, :])
+                    trk.update_emb(dets_embs[det_ind], alpha=dets_alpha[det_ind])
+                    if self.mode == "recognition":
+                        trk.update_trajectory(img, dets[m[0], :])
+                        if trk.should_match_gait() and trk.gait_feature is None:
+                            trk.gait_feature = self.gait_model.extract_gait_feature(
+                                trk.trajectory_buffer)
+                            trk.id = check_and_record(
+                                trk.emb, trk.gait_feature, self.mode, self.save_file, trk.id, threshold=0.65) 
+                            print(trk.id)
                     to_remove_det_indices.append(det_ind)
                     to_remove_trk_indices.append(trk_ind)
                 unmatched_dets = np.setdiff1d(unmatched_dets, np.array(to_remove_det_indices))
@@ -505,25 +499,12 @@ class DeepOcSort(BaseTracker):
                 Q_s_scaling=self.Q_s_scaling,                
                 max_obs=self.max_obs
             )
-            trk.update_trajectory(img, dets[i, :])
+            if self.mode == "recognition":
+                trk.update_trajectory(img, dets[i, :])
+                trk.id = 0
             self.active_tracks.append(trk)
-            matched_id = check_and_record(trk.emb, None, self.mode, self.save_file, threshold=0.65)
-            trk.id = matched_id
+            
         i = len(self.active_tracks)
-        
-        # # 用数据库返回的 ID 赋值给 trk_id
-        # if self.mode != 'annotation':
-        #     reid_feature = dets_embs[i]
-        #     if self.mode == 'registration':
-        #         matched_id = check_and_record(reid_feature, self.mode, self.save_file, box_id[i], threshold=0.65)
-        #     else:
-        #         matched_id = check_and_record(reid_feature, self.mode, self.save_file, threshold=0.65)
-        #     trk.id = matched_id
-        # for trk in self.active_tracks:
-        #     if trk.should_match_db():
-        #         trk.db_id = check_and_record(trk.trajectory_buffer, self.mode, self.save_file, threshold=0.65)
-        #     if trk.is_ready_for_embedding():
-        #         trk.emb = self.model.get_features(np.array(trk.trajectory_buffer), img)
 
         for trk in reversed(self.active_tracks):
             if trk.last_observation.sum() < 0:
@@ -545,39 +526,15 @@ class DeepOcSort(BaseTracker):
             return np.concatenate(ret)
         return np.array([])
     
-    def registration(self, dets: list, imgs: list = None) -> list: #main方法中的load_json_bboxes对应的track_id以及id问题，需要修复annotation模式标注出来的文本。
-        """
-        对多帧图像进行注册: 
-        1. 按帧遍历，读取其中所有检测框 (x1,y1,x2,y2,cls,id)。
-        2. 裁剪出对应区域并提取 Re-ID 特征 (可加步态特征)。
-        3. 调用 check_and_record 将特征注册进数据库。
+    def registration(self, dets: list, imgs: list = None) -> list: 
 
-        Args:
-            imgs (List[np.ndarray] | np.ndarray):
-                多帧图像序列，可是 Python 列表[frame0, frame1, ...],
-                或形状 (T, H, W, C) 的 4D NumPy 数组。
-            dets (List[np.ndarray] | np.ndarray):
-                检测框列表或数组，长度/第一维与 imgs 对应。
-                每帧是一个 (M, 4/5/...) 的数组, 其中前4列是 [x1, y1, x2, y2]。
-            box_ids (List[List[int]] | np.ndarray | None, optional):
-                与 dets 对应的目标 ID, 形状 (T, M)。
-                若 None, 则默认用 (frame_idx, detection_idx) 作为标识。
-
-        Returns:
-            dict:
-                键: 可根据需要使用 (frame_idx, detection_idx) 或者 box_ids[frame_idx][det_idx]。
-                值: matched_id (数据库中的 ID)。
-        """
         if len(dets) == 0:
             return
 
         assert len(imgs) == len(dets), "imgs 和 dets 的帧数不匹配"
-        results = {}
         for f_idx, (frame, frame_dets) in enumerate(zip(imgs, dets)):
             if frame_dets is None or len(frame_dets) == 0:
                 continue
-            h, w = frame.shape[:2]
-            unmatched_dets = []
             dets_embs = self.model.get_features(frame_dets[:, 0:4], frame)
             trust = (frame_dets[:, 4] - self.det_thresh) / (1 - self.det_thresh) #计算并归一化trust
             af = self.alpha_fixed_emb
@@ -590,7 +547,7 @@ class DeepOcSort(BaseTracker):
                 match = False
 
                 for trk in self.active_tracks:
-                    if det_id == trk.track_id:
+                    if det_id == trk.id:
                         trk.update(frame_dets[i, :])
                         trk.update_emb(dets_embs[i], alpha=dets_alpha[i])
                         trk.update_trajectory(frame, frame_dets[i, :])
@@ -606,15 +563,18 @@ class DeepOcSort(BaseTracker):
                         Q_s_scaling=self.Q_s_scaling,                
                         max_obs=self.max_obs,
                     )
-                    trk.track_id = det_id
+                    trk.id = det_id
                     trk.trajectory_buffer = deque([], maxlen=len(dets))
                     trk.update_trajectory(frame, frame_dets[i, :])
                     self.active_tracks.append(trk)
         box_id_list = []
         for trk in self.active_tracks:
             trk.gait_feature = self.gait_model.extract_gait_feature(trk.trajectory_buffer)
-            matched_id = check_and_record(trk.emb, trk.gait_feature, self.mode, self.save_file, trk.track_id, threshold=0.65) 
-            box_id_list.append(trk.track_id)
+            matched_id = check_and_record(trk.emb, trk.gait_feature, self.mode, self.save_file, trk.id, threshold=0.65) 
+            box_id_list.append(trk.id)
         return box_id_list
+
+
+
 
 

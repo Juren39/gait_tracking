@@ -88,7 +88,7 @@ class GaitModel():
         ipts = self.imgs_resize_input(sils)
         ipts = gaitmodel.inputs_pretreament(ipts)
         embs = gaitmodel.forward(ipts)
-        embs = embs.flatten()
+        embs = embs.detach().cpu().numpy()
         return embs    
     
     def update_gait_feature(self, sils, old_embs):

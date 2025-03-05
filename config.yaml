@@ -24,5 +24,5 @@ line_width: 2  # 边框宽度
 per_class: false  # 是否按类别跟踪
 agnostic_nms: false  # 是否使用类别无关的 NMS
 verbose: false
-videofps: 10 # 视频帧数，一秒多少帧
+videofps: 30 # 视频帧数，一秒多少帧
 mode: recognition # annotation, registration, recognition

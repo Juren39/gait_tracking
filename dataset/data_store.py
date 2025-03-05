@@ -4,6 +4,8 @@ import pickle
 import os
 import numpy as np
 
+from opengait.evaluation.metric import cuda_dist
+
 def vector_to_b64(vec: np.ndarray) -> str:
     """将 numpy 向量序列化并做 base64 编码，以便存入 json."""
     raw_bytes = pickle.dumps(vec, protocol=pickle.HIGHEST_PROTOCOL)
@@ -119,52 +121,41 @@ def check_and_record(
         db_gait_vec = b64_to_vector(db_gait_b64) if db_gait_b64 else None
 
         # 如果是 'registration' 模式，且 db_name == track_id，则直接更新
-        if mode == 'registration' and db_name == track_id:
-            matched_index = i
-            matched_id = num_id
-            matched_name = db_name
-            break
-
-        # 否则在 'recognition' 模式或无法直接匹配 name 时，计算相似度(仅用 reid_feature)
-        if db_reid_vec is not None:
-            sim = compute_cosine_similarity(reid_feature, db_reid_vec)
-            if sim > max_sim:
-                max_sim = sim
+        if mode == 'registration':
+            if db_name == track_id:
                 matched_index = i
                 matched_id = num_id
                 matched_name = db_name
+                alpha = 0.9
+                old_reid = b64_to_vector(rows[matched_index]["reid_feature"])
+                old_gait = b64_to_vector(rows[matched_index]["gait_feature"])
+                updated_reid = alpha * old_reid + (1 - alpha) * reid_feature
+                updated_reid = normalize(updated_reid)
+                updated_gait = alpha * old_gait + (1 - alpha) * gait_feature
+                updated_gait = normalize(updated_gait)
+                rows[matched_index]["reid_feature"] = vector_to_b64(updated_reid)
+                rows[matched_index]["gait_feature"] = vector_to_b64(updated_gait)
+                save_local_db(local_file, rows)
+                return matched_id
 
-    if mode == 'registration' and matched_name == track_id:
-        alpha = 0.9
-        old_reid = b64_to_vector(rows[matched_index]["reid_feature"])
-        old_gait = b64_to_vector(rows[matched_index]["gait_feature"]) if rows[matched_index]["gait_feature"] else None
-
-        updated_reid = alpha * old_reid + (1 - alpha) * reid_feature
-        updated_reid = normalize(updated_reid)
-        updated_gait = alpha * old_gait + (1 - alpha) * gait_feature
-        updated_gait = normalize(updated_gait)
-
-        rows[matched_index]["reid_feature"] = vector_to_b64(updated_reid)
-        if updated_gait is not None:
-            rows[matched_index]["gait_feature"] = vector_to_b64(updated_gait)
-
-        save_local_db(local_file, rows)
-        return matched_id
-
-    elif mode == 'recognition':
-        if max_sim >= threshold:
-            return matched_id  # 返回已存在的ID
+        # 否则在 'recognition' 模式时，计算相似度
         else:
-            return -1          # 未匹配
-    else:
+            if db_reid_vec is not None and db_gait_vec is not None:
+                sim_1 = compute_cosine_similarity(reid_feature, db_reid_vec)
+                sim_2 = cuda_dist(gait_feature, db_gait_vec)
+                sim = sim_1 * 1 + sim_2 * 0
+                if sim > max_sim:
+                    max_sim = sim
+                    matched_index = i
+                    matched_id = num_id
+                    matched_name = db_name
+        
+    if mode == 'registration':
         new_id = max_id + 1
         new_reid = normalize(reid_feature)
         new_reid_b64 = vector_to_b64(new_reid)
-        new_gait_b64 = None
-        if gait_feature is not None:
-            new_gait = normalize(gait_feature)
-            new_gait_b64 = vector_to_b64(new_gait)
-    
+        new_gait = normalize(gait_feature)
+        new_gait_b64 = vector_to_b64(new_gait)
         new_row = {
             "id": new_id,
             "name": track_id, 
@@ -173,6 +164,11 @@ def check_and_record(
         }
         rows.append(new_row)
         save_local_db(local_file, rows)
+    else:
+        if max_sim >= threshold:
+            return matched_id  
+        else:
+            return -1          
     return new_id
 
 def check_test(
