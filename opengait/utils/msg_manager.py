@@ -115,7 +115,4 @@ noop = NoOp()
 
 
 def get_msg_mgr():
-    if torch.distributed.get_rank() > 0:
-        return noop
-    else:
-        return msg_mgr
+    return msg_mgr

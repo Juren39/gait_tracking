@@ -1,4 +1,3 @@
-import argparse
 import cv2
 import numpy as np
 from functools import partial
@@ -38,7 +37,7 @@ def on_predict_start(predictor, persist=False):
             tracking_config,
             predictor.custom_args['reid_model'],
             predictor.custom_args['gait_model'],
-            predictor.device,
+            predictor.custom_args['device'],
             predictor.custom_args['half'],
             predictor.custom_args['save_file'],
             predictor.custom_args['mode'],
@@ -92,7 +91,7 @@ def run(args):
 
     registered_ids = set()  
     id_info_list = []  # 详细信息
-
+    det_len = 0
     for video_path in video_files:
 
         source_file_name = video_path.stem
@@ -144,6 +143,7 @@ def run(args):
                     break
                 frames_list.append(frame)
                 dets, id_list = load_json_bboxes(Path(source) / 'labels' / f'{source_file_name}_labels.txt', frame_idx)  # [x1, y1, x2, y2, confidence, cls, track_id]
+                det_len += len(dets)
                 # 遍历每个检测框，获取 track_id
                 for i, box in enumerate(dets):
                     track_id = id_list[i]
@@ -159,6 +159,7 @@ def run(args):
                 frame_idx += 1
             progress_bar.close()
             save_id_mapping(mapping_file, id_map)
+            print(f"📌 视频读取完成，共读取 {det_len} 个检测框")
             print('registration start!')
             box_id_list = tracker.registration(dets_list, frames_list)
             # 统计出现的 ID
@@ -170,7 +171,6 @@ def run(args):
                     })
             cap.release()
             print('registration end!')
-
         else:
             if imgsz is None:
                 imgsz = default_imgsz(yolo_model)
@@ -179,7 +179,6 @@ def run(args):
                 yolo_model if is_ultralytics_model(yolo_model)
                 else 'yolov8n.pt',
             )
-
             results = yolo.track(
                 source=origin_to_mp4_path,
                 conf=conf,
@@ -199,7 +198,6 @@ def run(args):
                 verbose=verbose
             )
             frame_idx = 0  # 记录帧编号 
-
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(str(video_output_path), fourcc, fps, (frame_width, frame_height))
             yolo.add_callback('on_predict_start', partial(on_predict_start, persist=True))
@@ -275,6 +273,7 @@ def run(args):
     
     if mode == 'registration':
         print(f"📌 Registration 模式完成，共注册 {len(registered_ids)} 个 ID")
+        print(f"📌 Registration 模式完成，共读取 {det_len} 个检测框")
         print("📋 详细信息:")
         for info in id_info_list:
             print(f"🔹 ID :{info['track_id']}")
@@ -288,11 +287,12 @@ def convert_to_mp4(input_path, output_path, videofps):
         '-n',
         "-i", input_path,           # 输入视频
         "-c:v", "libx264",          # 视频编码器
-        "-preset", "fast",          # 压缩速度/质量平衡
-        "-crf", "23",               # 视频质量（数值越小越清晰）
+        "-preset", "veryslow",          # 压缩速度/质量平衡
+        "-crf", "0",                # 视频质量（数值越小越清晰）
         "-c:a", "aac",              # 音频编码器
         "-b:a", "128k",             # 音频比特率
         "-movflags", "+faststart",  # 优化文件头
+        "-pix_fmt",  "yuv444p",
         "-r", videofps,
         output_path
     ]
@@ -332,7 +332,6 @@ def load_json_bboxes(json_path: str, frame_idx: int) -> np.ndarray: #main方法�
 
     if len(bboxes) == 0:
         return np.empty((0, 7), dtype=np.float32), id_list
-    
     return np.array(bboxes, dtype=np.float32), id_list
 
 def draw_tracking_results(image, tracks):

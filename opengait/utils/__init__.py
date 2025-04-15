@@ -7,4 +7,5 @@ from .common import mkdir, clones
 from .common import MergeCfgsDict
 from .common import get_attr_from
 from .common import NoOp
+from .align_pose import align_human_vertical
 from .msg_manager import get_msg_mgr

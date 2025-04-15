@@ -39,10 +39,10 @@
             "program": "/home/jsj/gait_tracking/main.py",  // 这里改成你的 main.py 路径
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
-                "NCCL_P2P_DISABLE": "1"
-            },
+            // "env": {
+            //     "CUDA_VISIBLE_DEVICES": "0",
+            //     "NCCL_P2P_DISABLE": "1"
+            // },
             // 如果需要传入命令行参数，可在此数组中填写
             "args": [
                 // "--some_arg", "some_value"

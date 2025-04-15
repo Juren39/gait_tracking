@@ -8,12 +8,10 @@
 #   https://github.com/facebookresearch/dino/blob/main/vision_transformer.py
 #   https://github.com/rwightman/pytorch-image-models/tree/master/timm/models/vision_transformer.py
 
-
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
 from einops import rearrange
-from ..base_model import BaseModel
 from torch.nn import functional as F
 from kornia import morphology as morph
 import random
@@ -86,16 +84,13 @@ def padding_resize(x, ratios, target_h, target_w):
     return x
 
 class BigGait__Dinov2_Gaitbase(nn.Module):
-    def __init__(self, model_cfg: dict, msg_mgr=None, device=None):
+    def __init__(self, model_cfg: dict):
         """
         Args:
             model_cfg (dict): 配置参数, 内含 pretrained_dinov2, pretrained_mask_branch 等子字段.
             msg_mgr (optional): 日志管理器(可为None或你的logger).
-            device (optional): 当前使用的设备, 可为 torch.device 或字符串等.
         """
         super().__init__()
-        self.msg_mgr = msg_mgr
-        self.device = device
 
         # 在构造函数里调用你原先的 build_network
         self.build_network(model_cfg)
@@ -223,15 +218,6 @@ class BigGait__Dinov2_Gaitbase(nn.Module):
         max_entropies = -torch.sum(max_p * torch.log2(max_p), dim=0)
         return torch.mean(max_entropies - entropies)
     
-    def inputs_pretreament(self, ipts):
-        mean_array = torch.tensor([0.485, 0.456, 0.406], device=self.device).view(1, 3, 1, 1)
-        std_array = torch.tensor([0.229, 0.224, 0.225], device=self.device).view(1, 3, 1, 1)
-        sils = ipts[0]
-        ratios = ipts[1]
-        sils = (sils - mean_array) / std_array
-        ipts = (sils, ratios)
-        return ipts
-    
     def merge_features_with_maxpool(old_features: torch.Tensor,
                                 new_feature: torch.Tensor) -> torch.Tensor:
         if new_feature.dim() == 1:
@@ -240,12 +226,13 @@ class BigGait__Dinov2_Gaitbase(nn.Module):
         merged_feature, _ = torch.max(combined, dim=0)
         return merged_feature
 
-    def forward(self, ipts):
-        sils = ipts[0]                      # input_images;         shape: [n,s,c,h,w];
-        ratios = ipts[1]                   # real_image_ratios     shape: [n,s,ratio];     ratio: w/h,  e.g. 112/224=0.5;
-        seqL = None
+    def forward(self, inputs):
+        ipts, labs, ty, vi, seqL = inputs
+        # sils = ipts[0]                      # input_images;         shape: [n,s,c,h,w];
+        # ratios = ipts[1]                   # real_image_ratios     shape: [n,s,ratio];     ratio: w/h,  e.g. 112/224=0.5;
+        sils = ipts[1]                      # input_images;         shape: [n,s,c,h,w];
+        ratios = ipts[0]                   # real_image_ratios     shape: [n,s,ratio];     ratio: w/h,  e.g. 112/224=0.5;
         del ipts
-
         with torch.no_grad():
             n,s,c,h,w = sils.size()
             sils = rearrange(sils, 'n s c h w -> (n s) c h w').contiguous()
@@ -260,6 +247,31 @@ class BigGait__Dinov2_Gaitbase(nn.Module):
             outs_last4 = self.preprocess(outs_last4, self.sils_size) # [ns,c,64,32]
             outs_last1 = rearrange(outs_last1.view(n, s, -1, self.sils_size*2, self.sils_size), 'n s c h w -> (n s) (h w) c').contiguous()
             outs_last4 = rearrange(outs_last4.view(n, s, -1, self.sils_size*2, self.sils_size), 'n s c h w -> (n s) (h w) c').contiguous()
+
+            # # 可视化
+            # l2_norms = torch.norm(outs_last4, p=2, dim=1)  # 形状 (N, H, W)
+            # # 选择样本并转换数据
+            # sample_idx = 0
+            # l2_sample = l2_norms[sample_idx].cpu().detach().numpy()
+            # rgb_sample = self.preprocess(padding_resize(sils[sample_idx:sample_idx+1], ratios[sample_idx:sample_idx+1], 256, 128), self.image_size).cpu().detach().numpy()  # 形状 (3, h, w)
+            # # 预处理RGB图像
+            # rgb_normalized = rearrange(rgb_sample[0], 'c h w -> h w c')
+            # rgb_normalized = (rgb_normalized - rgb_normalized.min()) / (rgb_normalized.max() - rgb_normalized.min() + 1e-8)
+            # # 设置可视化参数
+            # vmin, vmax = 10, 30
+            # alpha = 0.5
+            # # 创建1行3列画布
+            # plt.figure(figsize=(18, 6))
+            # save_path = Path('/home/jsj/gait_tracking/dataset/images')
+            # # ---------------------------
+            # # 子图1：RGB图像
+            # # ---------------------------
+            # plt.subplot(1, 3, 1)
+            # plt.imshow(rgb_normalized)
+            # plt.title(f'RGB (Sample {sample_idx})', fontsize=12)
+            # plt.axis('off')
+            # plt.savefig(save_path, bbox_inches='tight')
+            # print(f"Figure saved to {save_path}")
 
         # get foreground
         mask = torch.ones_like(outs_last1[...,0], device=outs_last1.device, dtype=outs_last1.dtype).view(n*s,1,self.sils_size*2,self.sils_size)
@@ -297,4 +309,29 @@ class BigGait__Dinov2_Gaitbase(nn.Module):
                                         appearance.view(n,s,self.sils_size*2,self.sils_size,self.app_dim).permute(0, 4, 1, 2, 3).contiguous(),
                                         seqL,
                                         )
-        return embed_1
+        retval = {
+                'training_feat': {},
+                'visual_summary': {},
+                'inference_feat': {'embeddings': embed_1}
+            }
+        # training
+        # retval = {
+        #     'training_feat': {
+        #         'shape_connect':loss_connectivity_shape*0.02,
+        #         'shape_mse': loss_mse1,
+        #         'part_connect':loss_connectivity_part*0.01,
+        #         'part_diversity':loss_diversity_part*5,
+        #         'triplet': {'embeddings': embed_1, 'labels': labs},
+        #         'softmax': {'logits': logits, 'labels': labs},
+        #     },
+        #     'visual_summary': {
+        #         'image/input': sils.view(n*s, c, h, w),
+        #         'image/foreground': self.min_max_norm(rearrange(foreground.view(n, s, self.sils_size*2, self.sils_size, -1), 'n s h w c -> (n s) c h w').contiguous()),
+        #         'image/denosing':self.min_max_norm(rearrange(torch.from_numpy(vis_denosing).float(), 'n s c h w -> (n s) c h w').contiguous()),
+        #         'image/appearance': self.min_max_norm(rearrange(torch.from_numpy(vis_appearance).float(), 'n s c h w -> (n s) c h w').contiguous()),
+        #     },
+        #     'inference_feat': {
+        #         'embeddings': embed_1
+        #     }
+        # }
+        return retval

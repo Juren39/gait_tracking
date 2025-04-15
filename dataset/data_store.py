@@ -143,7 +143,7 @@ def check_and_record(
             if db_reid_vec is not None and db_gait_vec is not None:
                 sim_1 = compute_cosine_similarity(reid_feature, db_reid_vec)
                 sim_2 = cuda_dist(gait_feature, db_gait_vec)
-                sim = sim_1 * 1 + sim_2 * 0
+                sim = sim_1 * 0 + sim_2 * 1
                 if sim > max_sim:
                     max_sim = sim
                     matched_index = i

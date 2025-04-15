@@ -55,7 +55,7 @@ class KalmanBoxTracker(object):
 
     count = 0
 
-    def __init__(self, det, delta_t=3, emb=None, alpha=0, max_obs=50, Q_xy_scaling = 0.01, Q_s_scaling = 0.0001):
+    def __init__(self, det, delta_t=3, emb=None, alpha=0, max_obs=100, Q_xy_scaling = 0.01, Q_s_scaling = 0.0001):
         """
         Initialises a tracker using initial bounding box.
 
@@ -317,6 +317,7 @@ class DeepOcSort(BaseTracker):
             weights=reid_weights, device=device, half=half
         ).model
         self.gait_model = GaitModel(
+            device,
             cfgs_path=gait_weights
         )
         # "similarity transforms using feature point extraction, optical flow, and RANSAC"
@@ -521,6 +522,12 @@ class DeepOcSort(BaseTracker):
             i -= 1
             # remove dead tracklet
             if trk.time_since_update > self.max_age:
+                if self.mode == "recognition" and trk.gait_feature is None:
+                    trk.gait_feature = self.gait_model.extract_gait_feature(
+                        trk.trajectory_buffer)
+                    trk.id = check_and_record(
+                        trk.emb, trk.gait_feature, self.mode, self.save_file, trk.id, threshold=0.65) 
+                    print(trk.id)
                 self.active_tracks.pop(i)
         if len(ret) > 0:
             return np.concatenate(ret)
@@ -530,7 +537,6 @@ class DeepOcSort(BaseTracker):
 
         if len(dets) == 0:
             return
-
         assert len(imgs) == len(dets), "imgs 和 dets 的帧数不匹配"
         for f_idx, (frame, frame_dets) in enumerate(zip(imgs, dets)):
             if frame_dets is None or len(frame_dets) == 0:
@@ -573,7 +579,16 @@ class DeepOcSort(BaseTracker):
             matched_id = check_and_record(trk.emb, trk.gait_feature, self.mode, self.save_file, trk.id, threshold=0.65) 
             box_id_list.append(trk.id)
         return box_id_list
+    
+    def recognition(self, dets: list, imgs: list = None):
 
+        dets_info_list = []
+        dets_info = self.update(dets, imgs)
+        for det in dets_info:
+            if det[1][0] != 0 and det[1][0] not in self.register_tracks:
+                self.register_tracks.append(det[1][0])
+                dets_info_list.append(self.active_tracks[det[4][0]].register_tracks)
+        return dets_info, dets_info_list
 
 
 

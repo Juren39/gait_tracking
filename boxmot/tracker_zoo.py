@@ -7,7 +7,8 @@ def get_tracker_config(tracker_type):
     """Returns the path to the tracker configuration file."""
     return TRACKER_CONFIGS / f'{tracker_type}.yaml'
 
-def create_tracker(tracker_type, tracker_config=None, reid_weights=None, gait_weights=None,device=None, half=None, save_file=None, mode=None, per_class=None, evolve_param_dict=None):
+def create_tracker(tracker_type, tracker_config=None, reid_weights=None, 
+                   gait_weights=None,device=None, half=None, save_file=None, mode=None, per_class=None, evolve_param_dict=None):
     """
     Creates and returns an instance of the specified tracker type.
     

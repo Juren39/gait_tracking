@@ -1,12 +1,21 @@
 data_cfg:
   dataset_name: CCPG
   # TODO
-  dataset_root: /data/CCPG/Released/CCPG-end2end-pkl/
-  dataset_partition: ./datasets/CCPG/CCPG.json
+  dataset_root: /data/CCPG/Released/CCPG-ratio-pkl/
+  dataset_partition: ./opengait/datasets/CCPG/CCPG.json
   data_in_use: [True, True] # images / real_ratios
-  num_workers: 8
+  num_workers: 1
   remove_no_gallery: false # Remove probe if no gallery for it
   test_dataset_name: CCPG
+
+# data_cfg:
+#   dataset_name: CASIA-B
+#   dataset_root: /data4/casiab-128-end2end/
+#   dataset_partition: ./opengait/datasets/CASIA-B/CASIA-B.json
+#   data_in_use: [False, True, True, False]
+#   num_workers: 1
+#   remove_no_gallery: false # Remove probe if no gallery for it
+#   test_dataset_name: CASIA-B
 
 evaluator_cfg:
   enable_float16: true
@@ -16,24 +25,18 @@ evaluator_cfg:
   eval_func: evaluate_CCPG
   sampler:
     batch_shuffle: false
-    batch_size: 4 # GPUs number
+    batch_size: 1 # GPUs number
     sample_type: all_ordered # all indicates whole sequence used to test, while ordered means input sequence by its natural order; Other options:   fixed_unordered
     frames_all_limit: 250 # limit the number of sampled frames to prevent out of memory
   metric: euc # cos
+  sils_transform: 0
   transform:
     - type: BaseRgbTransform
+      cutting: 0
     - type: NoOperation
-
-loss_cfg:
-  - loss_term_weight: 1.0
-    margin: 0.2
-    type: TripletLoss
-    log_prefix: triplet
-  - loss_term_weight: 1.0
-    scale: 16
-    type: CrossEntropyLoss
-    log_prefix: softmax
-    log_accuracy: true
+    # - type: NoOperation
+    # - type: BaseRgbTransform
+    #   cutting: 0
 
 model_cfg:
   model: BigGait__Dinov2_Gaitbase
@@ -103,49 +106,3 @@ model_cfg:
     parts_num: 16
   bin_num:
     - 16
-
-optimizer_cfg:
-  lr: 0.1
-  momentum: 0.9
-  solver: SGD
-  weight_decay: 0.0005
-
-scheduler_cfg:
-  gamma: 0.1
-  milestones: # Learning Rate Reduction at each milestones
-    - 15000
-    - 25000
-    - 30000
-    - 35000
-  scheduler: MultiStepLR
-
-
-trainer_cfg:
-  find_unused_parameters: True
-  enable_float16: true # half_percesion float for memory reduction and speedup
-  fix_BN: false
-  log_iter: 100
-  with_test: true
-  restore_ckpt_strict: true
-  restore_hint: 0
-  save_iter: 10000
-  save_name: BigGait__Dinov2_Gaitbase_Frame30
-  sync_BN: true
-  total_iter: 40000
-  sampler:
-    batch_shuffle: true
-    batch_size:
-      - 8 # TripletSampler, batch_size[0] indicates Number of Identity
-      - 8 #                 batch_size[1] indicates Samples sequqnce for each Identity
-    frames_num_fixed: 30 # fixed frames number for training
-    frames_skip_num: 4
-    frames_num_max: 40 # max frames number for unfixed training
-    frames_num_min: 20 # min frames number for unfixed traing
-    sample_type: fixed_unordered # fixed control input frames number, unordered for controlling order of input tensor; Other options: unfixed_ordered or all_ordered
-    type: TripletSampler
-  transform:
-    - type: Compose
-      trf_cfg:
-        - type: RandomHorizontalFlip
-        - type: BaseRgbTransform
-    - type: NoOperation

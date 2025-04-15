@@ -45,6 +45,7 @@ class BaseTracker(ABC):
 
         self.frame_count = 0
         self.active_tracks = []  # This might be handled differently in derived classes
+        self.register_tracks = []
         self.per_class_active_tracks = None
         self._first_frame_processed = False  # Flag to track if the first frame has been processed
         
@@ -124,7 +125,7 @@ class BaseTracker(ABC):
         """
         Decorator for the update method to handle per-class processing.
         """
-        def wrapper(self, dets: np.ndarray, img: np.ndarray, box_id: list = None, embs: np.ndarray = None):
+        def wrapper(self, dets: np.ndarray, img: np.ndarray, embs: np.ndarray = None):
             
             #handle different types of inputs
             if dets is None or len(dets) == 0:

@@ -1,13 +1,13 @@
 yolo_model: yolov8n.pt  # YOLO 模型路径
 reid_model: clip_market1501.pt  # ReID 模型路径
-gait_model: ./opengait/configs/biggait/BigGait_CCPG.yaml
+gait_model: ./opengait/configs/gaitbase/gaitbase_da_gait3d.yaml
 save_file: ./dataset/data_store.txt
 tracking_method: deepocsort  # 跟踪方法
 source: ./files/videos/probe  # 输入源（视频/摄像头）
 imgsz: [640, 640]  # 推理图像大小
 conf: 0.5  # 置信度阈值
 iou: 0.7  # NMS IoU 阈值
-device: cuda:0  # 设备
+device: cuda:1  # 设备
 show: false  # 是否显示追踪结果
 save: true  # 是否保存视频
 classes: [0]  # 筛选目标类别
@@ -24,5 +24,5 @@ line_width: 2  # 边框宽度
 per_class: false  # 是否按类别跟踪
 agnostic_nms: false  # 是否使用类别无关的 NMS
 verbose: false
-videofps: 30 # 视频帧数，一秒多少帧
+videofps: 10 # 视频帧数，一秒多少帧
 mode: recognition # annotation, registration, recognition
